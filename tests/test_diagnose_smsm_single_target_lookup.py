@@ -1813,6 +1813,47 @@ def test_direct_save_readiness_rejects_conflicts_before_browser(monkeypatch, cap
     assert "device_imei_send_keys_called=False" in output
 
 
+def test_direct_save_readiness_early_failure_emits_stdout_once(monkeypatch, capsys):
+    monkeypatch.setattr(mod, "load_config", lambda: {"excel": {"path": "unused"}})
+    monkeypatch.setattr(mod.ExcelReader, "read_targets", lambda *_args, **_kwargs: [])
+
+    assert mod._run_smsm_client_certificate_imei_direct_save_readiness_only([
+        "--inspect-smsm-client-certificate-imei-direct-save-readiness-only",
+    ]) == 1
+    output = capsys.readouterr().out
+    assert "client_certificate_direct_save_readiness_only_runner_called=True" in output
+    assert "client_certificate_direct_save_readiness_only_result_available=True" in output
+    assert "client_certificate_direct_save_readiness_only_output_called=True" in output
+    assert "client_certificate_direct_save_readiness_only_output_completed=True" in output
+    assert "client_certificate_direct_save_readiness_only_success=False" in output
+    assert "failed_stage=client_certificate_direct_save_readiness_only_load_target" in output
+
+
+def test_direct_save_readiness_exception_emits_safe_stdout(monkeypatch, capsys):
+    monkeypatch.setattr(mod, "load_config", lambda: (_ for _ in ()).throw(KeyError("secret_key")))
+
+    assert mod._run_smsm_client_certificate_imei_direct_save_readiness_only([
+        "--inspect-smsm-client-certificate-imei-direct-save-readiness-only",
+    ]) == 1
+    output = capsys.readouterr().out
+    assert "exception_type=KeyError" in output
+    assert "exception_key_present=True" in output
+    assert "exception_key_safe=secret_key" in output
+    assert "secret_key'" not in output
+    assert "client_certificate_direct_save_readiness_only_output_completed=True" in output
+
+
+def test_direct_save_readiness_finalize_emits_output_completed_once(monkeypatch, capsys):
+    monkeypatch.setattr(mod, "load_config", lambda: {"excel": {"path": "unused"}})
+    monkeypatch.setattr(mod.ExcelReader, "read_targets", lambda *_args, **_kwargs: [])
+
+    assert mod._run_smsm_client_certificate_imei_direct_save_readiness_only([
+        "--inspect-smsm-client-certificate-imei-direct-save-readiness-only",
+    ]) == 1
+    output = capsys.readouterr().out
+    assert output.count("client_certificate_direct_save_readiness_only_output_completed=") == 1
+
+
 @pytest.mark.parametrize("conflict", [
     "--inspect-smsm-client-certificate-edit-form-only",
     "--inspect-smsm-client-certificate-primary-input-only",

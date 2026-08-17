@@ -2065,6 +2065,10 @@ def _run_smsm_client_certificate_imei_direct_save_readiness_only(args: list[str]
         last_completed_stage = stage
 
     def finalize(result: dict[str, object], success: bool, exc: BaseException | None = None) -> int:
+        if exc is not None:
+            result = dict(result)
+            result.update(_name_error_diagnostics(exc, _base_dir()))
+            result.update(_key_error_diagnostics(exc))
         observations.update(_safe_observation_scalars(result))
         observations["client_certificate_direct_save_readiness_only_result_available"] = True
         observations["client_certificate_direct_save_readiness_only_success"] = success
@@ -2073,14 +2077,14 @@ def _run_smsm_client_certificate_imei_direct_save_readiness_only(args: list[str]
         observations["exception_type"] = type(exc).__name__ if exc is not None else ""
         observations["exception_message_class"] = "diagnostic_failure" if exc is not None else ""
         observations["client_certificate_direct_save_readiness_only_output_called"] = True
+        observations["client_certificate_direct_save_readiness_only_output_completed"] = True
         for key, value in observations.items():
             if key in {"client_certificate_panel", "device_detail_panel", "panel", "exact_suggestion_element"}:
                 continue
             safe_value = _safe_public_diagnostic_value(value)
             if safe_value is not None:
                 _emit(logger, key, safe_value)
-        observations["client_certificate_direct_save_readiness_only_output_completed"] = True
-        _emit(logger, "client_certificate_direct_save_readiness_only_output_completed", True)
+                print(f"{key}={safe_value}")
         return 0 if success else 1
 
     try:
