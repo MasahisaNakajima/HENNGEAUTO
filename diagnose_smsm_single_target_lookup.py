@@ -2017,6 +2017,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_smsm_client_certificate_navigation_only(args)
     if "--inspect-smsm-client-certificate-edit-form-only" in args:
         return _run_smsm_client_certificate_edit_form_only(args)
+    if "--inspect-smsm-client-certificate-primary-input-only" in args:
+        return _run_smsm_client_certificate_primary_input_only(args)
     if "--inspect-matched-device-result-links" in args:
         return _run_matched_device_result_link_inspection(args)
     if "--smsm-login-only" in args:
@@ -2361,6 +2363,97 @@ def _run_smsm_client_certificate_edit_form_only(args: list[str]) -> int:
                 continue
             _emit(logger, key, safe_value)
             print(f"{key}={safe_value}")
+        return 1
+    finally:
+        if browser is not None:
+            try:
+                browser.quit()
+            except Exception:
+                pass
+
+
+def _run_smsm_client_certificate_primary_input_only(args: list[str]) -> int:
+    """Inspect the resolved primary input without interacting with it."""
+    logger = AppLogger(_base_dir(), unique_log=True)
+    browser = None
+    operations = {
+        "client_certificate_primary_input_click_called": False,
+        "client_certificate_primary_input_focus_called": False,
+        "client_certificate_primary_input_value_write_called": False,
+        "client_certificate_primary_input_expand_click_called": False,
+        "client_certificate_selection_control_click_called": False,
+        "client_certificate_option_selection_called": False,
+        "device_imei_send_keys_called": False,
+        "device_binding_save_called": False,
+        "client_certificate_cancel_click_called": False,
+        "excel_write_called": False,
+        "certificate_upload_called": False,
+        "browser_start_called": False,
+    }
+    forbidden = {
+        "--bind-existing-smsm-certificate", "--allow-device-binding", "--allow-excel-write",
+        "--allow-certificate-upload", "--allow-certificate-download", "--prepare-smsm-certificate-upload",
+        "--run-single-certificate-workflow", "--inspect-smsm-client-certificate-edit-form-only",
+        "--inspect-smsm-client-certificate-navigation-only", "--verify-smsm-device-detail-only",
+    }
+    if args != ["--inspect-smsm-client-certificate-primary-input-only"] or any(flag in forbidden for flag in args):
+        for key, value in {**operations, "failed_stage": "cli_flag_validation", "exception_type": "ArgumentError"}.items():
+            _emit(logger, key, value)
+            print(f"{key}={value}")
+        return 2
+    try:
+        config = load_config()
+        excel_path = str((config.get("excel", {}) or {}).get("path", ""))
+        targets = ExcelReader(excel_path).read_targets(include_row_number=True)
+        if not targets:
+            raise RuntimeError("有効なExcel対象がありません")
+        context = WorkflowContext()
+        context.config = config
+        context.set_target(targets[0])
+        smsm_config = resolve_smsm_config(config)
+        browser = Browser(_base_dir(), config)
+        browser.start()
+        operations["browser_start_called"] = True
+        service = ProductionWorkflowService(config=config, logger=logger, browser=browser, smsm_config=smsm_config)
+        service.smsm_login(context)
+        service.smsm_open_device_list(context)
+        service.smsm_search_device_by_serial(context, read_only=True)
+        result = service.smsm.inspect_client_certificate_edit_form_only(context.target_serial, keep_panel=True)
+        result.update(operations)
+        panel = result.get("client_certificate_panel")
+        if not (
+            result.get("device_result_identity_verified") is True
+            and result.get("client_certificate_edit_transition_detected") is True
+            and result.get("client_certificate_edit_marker_wait_completed") is True
+            and panel is not None
+        ):
+            result["primary_input_failed_stage"] = "client_certificate_edit_form_only_wait_edit_state"
+            success = False
+        else:
+            result.update(service.smsm.inspect_primary_client_certificate_input(panel))
+            success = bool(
+                result.get("client_certificate_primary_input_candidate_count") == 1
+                and result.get("client_certificate_primary_input_unique") is True
+                and result.get("client_certificate_primary_input_resolved") is True
+                and result.get("client_certificate_after_control_element_count", 0) >= 1
+                and result.get("client_certificate_save_candidate_count") == 1
+                and result.get("client_certificate_cancel_candidate_count") == 1
+                and not any(value for key, value in operations.items() if key != "browser_start_called")
+            )
+        result.pop("client_certificate_panel", None)
+        result["failed_stage"] = "" if success else result.get("primary_input_failed_stage", "client_certificate_primary_input_inspection")
+        result["last_completed_stage"] = "client_certificate_primary_input_inspection" if success else "client_certificate_edit_form_only_wait_edit_state"
+        for key, value in result.items():
+            if key in {"panel", "device_detail_panel", "client_certificate_panel", "edit_form"}:
+                continue
+            safe_value = _safe_public_diagnostic_value(value)
+            if safe_value is not None:
+                _emit(logger, key, safe_value)
+                print(f"{key}={safe_value}")
+        return 0 if success else 1
+    except Exception as exc:
+        print(f"failed_stage=client_certificate_primary_input_inspection")
+        print(f"exception_type={type(exc).__name__}")
         return 1
     finally:
         if browser is not None:
@@ -2754,6 +2847,7 @@ def _workflow_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verify-smsm-device-detail-only", action="store_true")
     parser.add_argument("--inspect-smsm-client-certificate-navigation-only", action="store_true")
     parser.add_argument("--inspect-smsm-client-certificate-edit-form-only", action="store_true")
+    parser.add_argument("--inspect-smsm-client-certificate-primary-input-only", action="store_true")
     return parser
 
 

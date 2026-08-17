@@ -1014,7 +1014,7 @@ class SmsmHandler:
             "client_certificate_selection_control_candidate_count": 0,
         }
 
-    def inspect_client_certificate_edit_form_only(self, serial: str, trace=None) -> dict[str, object]:
+    def inspect_client_certificate_edit_form_only(self, serial: str, trace=None, keep_panel: bool = False) -> dict[str, object]:
         """Reach the certificate form, click Edit only from view state, then inspect controls."""
         result = self.inspect_client_certificate_navigation_only(serial, trace=trace)
         result.update({
@@ -1112,7 +1112,8 @@ class SmsmHandler:
         })
         panel = result.get("client_certificate_panel")
         if panel is None or result.get("client_certificate_panel_unique") is not True:
-            result.pop("client_certificate_panel", None)
+            if not keep_panel:
+                result.pop("client_certificate_panel", None)
             return result
         state = self._wait_for_client_certificate_state(timeout=10, expected_state="view", trace=trace)
         panel = state.get("panel")
@@ -1129,7 +1130,8 @@ class SmsmHandler:
             edit = self._certificate_edit_candidates(panel)
             result["client_certificate_edit_click_target_count"] = len(edit)
             if len(edit) != 1 or not self._safe_bool(edit[0], "is_displayed") or not self._safe_bool(edit[0], "is_enabled"):
-                result.pop("client_certificate_panel", None)
+                if not keep_panel:
+                    result.pop("client_certificate_panel", None)
                 return result
             target = edit[0]
             result.update({
@@ -1144,7 +1146,8 @@ class SmsmHandler:
                 target.click()
             except Exception as exc:
                 result["client_certificate_edit_click_exception_type"] = type(exc).__name__
-                result.pop("client_certificate_panel", None)
+                if not keep_panel:
+                    result.pop("client_certificate_panel", None)
                 return result
             result["client_certificate_edit_click_called"] = True
             result["client_certificate_edit_click_count"] = 1
@@ -1173,7 +1176,8 @@ class SmsmHandler:
             result["client_certificate_edit_control_presence_verified"] = result["client_certificate_control_appeared"]
             result["client_certificate_edit_control_element_count"] = result.get("client_certificate_after_control_element_count", 0)
             result["client_certificate_edit_control_field_container_count"] = result.get("client_certificate_control_logical_group_count", 0)
-        result.pop("client_certificate_panel", None)
+        if not keep_panel:
+            result.pop("client_certificate_panel", None)
         return result
 
     def _certificate_edit_candidates(self, panel):
@@ -1197,6 +1201,100 @@ class SmsmHandler:
             if candidate is not None and not any(candidate is existing or candidate == existing for existing in candidates):
                 candidates.append(candidate)
         return candidates
+
+    def inspect_primary_client_certificate_input(self, panel, trace=None) -> dict[str, object]:
+        result = {
+            "client_certificate_primary_input_inspection_called": True,
+            "client_certificate_primary_input_raw_candidate_count": 0,
+            "client_certificate_primary_input_in_edit_panel_count": 0,
+            "client_certificate_primary_input_attached_count": 0,
+            "client_certificate_primary_input_selenium_visible_count": 0,
+            "client_certificate_primary_input_dom_visible_count": 0,
+            "client_certificate_primary_input_nonzero_rect_count": 0,
+            "client_certificate_primary_input_hidden_type_count": 0,
+            "client_certificate_primary_input_disabled_count": 0,
+            "client_certificate_primary_input_readonly_count": 0,
+            "client_certificate_primary_input_aria_hidden_count": 0,
+            "client_certificate_primary_input_focusable_count": 0,
+            "client_certificate_primary_input_role_combobox_count": 0,
+            "client_certificate_primary_input_aria_controls_count": 0,
+            "client_certificate_primary_input_aria_popup_count": 0,
+            "client_certificate_primary_input_same_field_container_count": 0,
+            "client_certificate_primary_input_same_edit_panel_count": 0,
+            "client_certificate_primary_input_background_search_count": 0,
+            "client_certificate_primary_input_same_parent_count": 0,
+            "client_certificate_primary_input_parent_child_count": 0,
+            "client_certificate_primary_input_same_geometry_count": 0,
+            "client_certificate_primary_input_candidate_count": 0,
+            "client_certificate_primary_input_unique": False,
+            "client_certificate_primary_input_resolved": False,
+            "client_certificate_primary_input_resolution_method": "unresolved",
+            "client_certificate_primary_input_click_called": False,
+            "client_certificate_primary_input_focus_called": False,
+            "client_certificate_primary_input_value_write_called": False,
+            "client_certificate_primary_input_expand_control_count": 0,
+            "client_certificate_primary_input_expand_same_field_count": 0,
+            "client_certificate_primary_input_expand_click_called": False,
+        }
+        if panel is None:
+            return result
+        selectors = "input,textarea,[role='combobox'],[contenteditable='true']"
+        candidates = self._safe_find_elements_from(panel, By.CSS_SELECTOR, selectors)
+        result["client_certificate_primary_input_raw_candidate_count"] = len(candidates)
+        result["client_certificate_primary_input_in_edit_panel_count"] = len(candidates)
+        result["client_certificate_primary_input_same_edit_panel_count"] = len(candidates)
+        eligible = []
+        for candidate in candidates:
+            attached = self._safe_bool(candidate, "is_enabled") or self._safe_bool(candidate, "is_displayed")
+            selenium_visible = self._safe_bool(candidate, "is_displayed")
+            visibility = self._dom_visibility_probe(candidate)
+            dom_visible = bool(visibility.get("visible"))
+            tag = str(getattr(candidate, "tag_name", "") or "").casefold()
+            input_type = str(self._safe_attribute(candidate, "type") or "").casefold()
+            role = str(self._safe_attribute(candidate, "role") or "").casefold()
+            aria_hidden = str(self._safe_attribute(candidate, "aria-hidden") or "").casefold() == "true"
+            disabled = self._safe_bool_attribute(candidate, "disabled") or not self._safe_bool(candidate, "is_enabled")
+            readonly = self._safe_bool_attribute(candidate, "readonly")
+            tabindex = self._safe_attribute(candidate, "tabindex")
+            focusable = False
+            try:
+                focusable = tabindex is not None and int(str(tabindex)) >= 0 and not disabled and not readonly
+            except (TypeError, ValueError):
+                focusable = False
+            nonzero = dom_visible
+            if attached:
+                result["client_certificate_primary_input_attached_count"] += 1
+            if selenium_visible:
+                result["client_certificate_primary_input_selenium_visible_count"] += 1
+            if dom_visible:
+                result["client_certificate_primary_input_dom_visible_count"] += 1
+            if nonzero:
+                result["client_certificate_primary_input_nonzero_rect_count"] += 1
+            if input_type == "hidden":
+                result["client_certificate_primary_input_hidden_type_count"] += 1
+            if disabled:
+                result["client_certificate_primary_input_disabled_count"] += 1
+            if readonly:
+                result["client_certificate_primary_input_readonly_count"] += 1
+            if aria_hidden:
+                result["client_certificate_primary_input_aria_hidden_count"] += 1
+            if focusable:
+                result["client_certificate_primary_input_focusable_count"] += 1
+            if role == "combobox":
+                result["client_certificate_primary_input_role_combobox_count"] += 1
+            if self._safe_attribute(candidate, "aria-controls") is not None:
+                result["client_certificate_primary_input_aria_controls_count"] += 1
+            if self._safe_attribute(candidate, "aria-haspopup") is not None:
+                result["client_certificate_primary_input_aria_popup_count"] += 1
+            eligible_now = attached and (selenium_visible or dom_visible) and nonzero and input_type != "hidden" and not aria_hidden and not disabled
+            if eligible_now:
+                eligible.append(candidate)
+        result["client_certificate_primary_input_candidate_count"] = len(eligible)
+        result["client_certificate_primary_input_unique"] = len(eligible) == 1
+        result["client_certificate_primary_input_resolved"] = len(eligible) == 1
+        if len(eligible) == 1:
+            result["client_certificate_primary_input_resolution_method"] = "visible_nonhidden_edit_field_input"
+        return result
 
     @staticmethod
     def _certificate_edit_transition_detected(result: dict[str, object]) -> bool:

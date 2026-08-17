@@ -1550,6 +1550,42 @@ def test_certificate_after_snapshot_uses_current_edit_classification_not_before_
     assert snapshot["client_certificate_after_snapshot_metrics_consistent"] is True
 
 
+def test_primary_input_observation_resolves_visible_nonhidden_edit_input_without_interaction():
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside", children={"input,textarea,[role='combobox'],[contenteditable='true']": [DomNode("input", attrs={"type": "text", "tabindex": "0"})]})
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.inspect_primary_client_certificate_input(panel)
+
+    assert result["client_certificate_primary_input_raw_candidate_count"] == 1
+    assert result["client_certificate_primary_input_candidate_count"] == 1
+    assert result["client_certificate_primary_input_unique"] is True
+    assert result["client_certificate_primary_input_resolved"] is True
+    assert result["client_certificate_primary_input_resolution_method"] == "visible_nonhidden_edit_field_input"
+    assert result["client_certificate_primary_input_click_called"] is False
+    assert result["client_certificate_primary_input_focus_called"] is False
+    assert result["client_certificate_primary_input_value_write_called"] is False
+
+
+def test_primary_input_observation_excludes_hidden_and_disabled_candidates():
+    handler = handler_for(type("Driver", (), {})())
+    candidates = [
+        DomNode("input", attrs={"type": "hidden"}),
+        DomNode("input", attrs={"type": "text", "disabled": "true"}),
+    ]
+    panel = DomNode("aside", children={"input,textarea,[role='combobox'],[contenteditable='true']": candidates})
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.inspect_primary_client_certificate_input(panel)
+
+    assert result["client_certificate_primary_input_raw_candidate_count"] == 2
+    assert result["client_certificate_primary_input_candidate_count"] == 0
+    assert result["client_certificate_primary_input_resolved"] is False
+    assert result["client_certificate_primary_input_click_called"] is False
+
+
 def test_edit_marker_wait_succeeds_without_strict_form_wait(monkeypatch):
     handler = handler_for(type("Driver", (), {})())
     panel = DomNode("aside")
