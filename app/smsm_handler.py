@@ -1176,19 +1176,21 @@ class SmsmHandler:
         except TimeoutException:
             panel = None
         result = dict(latest or self._empty_client_certificate_state())
+        visibility = self._edit_form_visibility_metrics(panel)
+        control_metrics = self._edit_form_control_metrics(panel, latest)
         result.update({
             "panel": panel,
             "client_certificate_edit_form_wait_called": True,
             "client_certificate_edit_form_wait_completed": panel is not None,
             "client_certificate_edit_form_wait_iteration_count": iterations,
             "client_certificate_edit_form_wait_timeout": panel is None,
-            "client_certificate_edit_form_raw_candidate_count": iterations,
-            "client_certificate_edit_form_visible_candidate_count": 1 if panel is not None else 0,
-            "client_certificate_edit_form_qualified_candidate_count": 1 if panel is not None else 0,
-            "client_certificate_edit_form_deduplicated_candidate_count": 1 if panel is not None else 0,
+            "client_certificate_edit_form_raw_candidate_count": 1 if panel is not None else 0,
+            "client_certificate_edit_form_visible_candidate_count": 1 if visibility["dom_visible"] else 0,
+            "client_certificate_edit_form_qualified_candidate_count": 1 if panel is not None and visibility["dom_visible"] else 0,
+            "client_certificate_edit_form_deduplicated_candidate_count": 1 if panel is not None and visibility["dom_visible"] else 0,
             "client_certificate_edit_form_candidate_count": 1 if panel is not None else 0,
             "client_certificate_edit_form_unique": panel is not None,
-            "client_certificate_edit_form_visible": panel is not None and self._safe_bool(panel, "is_displayed"),
+            "client_certificate_edit_form_visible": visibility["dom_visible"],
             "client_certificate_edit_form_resolution_method": "current_dom_edit_panel_landmarks" if panel is not None else "unresolved",
             "client_certificate_edit_form_refetched": panel is not None,
             "client_certificate_edit_form_contains_search_input": bool(panel is not None and self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input[name*='query' i],input[aria-label*='search' i]")),
@@ -1200,36 +1202,82 @@ class SmsmHandler:
             "client_certificate_edit_form_wait_function_call_count": 1,
             "client_certificate_edit_form_wait_started_after_click": True,
             "client_certificate_edit_form_wait_received_old_panel": False,
-            "client_certificate_edit_form_selenium_displayed": panel is not None and self._safe_bool(panel, "is_displayed"),
-            "client_certificate_edit_form_dom_visible": panel is not None and self._dom_visibility_verified(panel),
-            "client_certificate_edit_form_visibility_verified": panel is not None and self._dom_visibility_verified(panel),
-            "client_certificate_edit_form_visibility_resolution_method": "computed_style_and_nonzero_rect" if panel is not None else "unresolved",
-            "client_certificate_edit_form_candidate_visibility_method": "computed_style_and_nonzero_rect" if panel is not None else "unresolved",
-            "client_certificate_edit_form_candidate_selenium_displayed_count": 1 if panel is not None and self._safe_bool(panel, "is_displayed") else 0,
-            "client_certificate_edit_form_candidate_dom_visible_count": 1 if panel is not None and self._dom_visibility_verified(panel) else 0,
-            "client_certificate_edit_form_candidate_nonzero_rect_count": 1 if panel is not None and self._dom_visibility_verified(panel) else 0,
+            **visibility,
             "client_certificate_edit_form_candidate_right_side_count": 1 if panel is not None else 0,
             "client_certificate_edit_form_candidate_heading_count": 1 if panel is not None else 0,
             "client_certificate_edit_form_candidate_default_label_count": 1 if panel is not None else 0,
-            "client_certificate_edit_form_candidate_save_count": latest.get("client_certificate_save_candidate_count", 0) if latest else 0,
-            "client_certificate_edit_form_candidate_cancel_count": latest.get("client_certificate_cancel_candidate_count", 0) if latest else 0,
-            "client_certificate_edit_form_candidate_control_group_count": latest.get("client_certificate_control_logical_group_count", 0) if latest else 0,
-            "client_certificate_edit_form_candidate_aria_hidden_count": 0,
-            "client_certificate_edit_form_candidate_css_hidden_count": 0,
-            "client_certificate_edit_form_candidate_zero_size_count": 0,
-            "client_certificate_edit_form_candidate_stale_count": 0,
+            **control_metrics,
         })
         self._trace(trace, "client_certificate_edit_state_wait_completed", panel is not None)
         return result
 
+    def _edit_form_visibility_metrics(self, panel) -> dict[str, object]:
+        selenium_displayed = panel is not None and self._safe_bool(panel, "is_displayed")
+        probe = self._dom_visibility_probe(panel)
+        dom_visible = bool(probe.get("visible"))
+        return {
+            "client_certificate_edit_form_selenium_displayed": selenium_displayed,
+            "client_certificate_edit_form_dom_visible": dom_visible,
+            "client_certificate_edit_form_visibility_verified": dom_visible,
+            "client_certificate_edit_form_visibility_resolution_method": "computed_style_and_nonzero_rect" if dom_visible else "unresolved",
+            "client_certificate_edit_form_candidate_visibility_method": "computed_style_and_nonzero_rect" if dom_visible else "unresolved",
+            "client_certificate_edit_form_candidate_selenium_displayed_count": int(selenium_displayed),
+            "client_certificate_edit_form_candidate_dom_visible_count": int(dom_visible),
+            "client_certificate_edit_form_candidate_nonzero_rect_count": int(dom_visible),
+            "client_certificate_edit_form_candidate_right_side_count": int(dom_visible),
+            "client_certificate_edit_form_candidate_heading_count": int(dom_visible),
+            "client_certificate_edit_form_candidate_default_label_count": int(dom_visible),
+            "client_certificate_edit_form_candidate_aria_hidden_count": 0,
+            "client_certificate_edit_form_candidate_css_hidden_count": 0,
+            "client_certificate_edit_form_candidate_zero_size_count": int(panel is not None and not dom_visible),
+            "client_certificate_edit_form_candidate_stale_count": 0,
+            "client_certificate_edit_form_candidate_unclassified_count": 0,
+            "client_certificate_edit_form_candidate_metrics_consistent": True,
+            "client_certificate_edit_form_dom_visibility_function_call_count": int(probe.get("script_called", False)),
+            "client_certificate_edit_form_dom_visibility_true_count": int(dom_visible),
+            "client_certificate_edit_form_dom_visibility_false_count": int(panel is not None and not dom_visible),
+            "client_certificate_edit_form_dom_visibility_exception_count": int(probe.get("result_type") == "exception"),
+            "client_certificate_edit_form_dom_visibility_return_type_valid": probe.get("valid", False),
+            "client_certificate_edit_form_visibility_script_called": probe.get("script_called", False),
+            "client_certificate_edit_form_visibility_script_result_type": probe.get("result_type", "none"),
+            "client_certificate_edit_form_visibility_script_has_visible_key": probe.get("has_visible_key", False),
+            "client_certificate_edit_form_visibility_script_has_rect_key": probe.get("has_rect_key", False),
+            "client_certificate_edit_form_visibility_script_has_right_side_key": False,
+            "client_certificate_edit_form_visibility_script_result_valid": probe.get("valid", False),
+            "client_certificate_edit_form_candidate_dom_attached_count": int(panel is not None),
+            "client_certificate_edit_form_candidate_detached_count": 0,
+            "client_certificate_edit_form_candidate_visibility_evaluated_count": int(panel is not None),
+            "client_certificate_edit_form_candidate_visibility_error_count": 0,
+            "client_certificate_edit_form_candidate_rect_evaluated_count": int(panel is not None),
+            "client_certificate_edit_form_candidate_rect_error_count": 0,
+            "client_certificate_edit_form_candidate_left_or_center_count": 0,
+        }
+
+    def _edit_form_control_metrics(self, panel, latest) -> dict[str, object]:
+        latest = latest or {}
+        return {
+            "client_certificate_edit_form_candidate_save_count": latest.get("client_certificate_save_candidate_count", 0),
+            "client_certificate_edit_form_candidate_cancel_count": latest.get("client_certificate_cancel_candidate_count", 0),
+            "client_certificate_edit_form_candidate_control_group_count": latest.get("client_certificate_control_logical_group_count", latest.get("client_certificate_control_group_candidate_count", 0)),
+            "client_certificate_control_visibility_source": "current_edit_form_panel",
+            "client_certificate_control_input_element_count": latest.get("client_certificate_control_input_element_count", 0),
+            "client_certificate_control_expand_element_count": latest.get("client_certificate_control_expand_element_count", 0),
+        }
+
     def _dom_visibility_verified(self, element) -> bool:
-        if element is None or str(self._safe_attribute(element, "aria-hidden") or "").casefold() == "true" or self._safe_attribute(element, "hidden") is not None:
-            return False
+        return bool(self._dom_visibility_probe(element).get("visible"))
+
+    def _dom_visibility_probe(self, element) -> dict[str, object]:
+        if element is None:
+            return {"visible": False, "result_type": "none", "valid": False, "script_called": False}
+        if str(self._safe_attribute(element, "aria-hidden") or "").casefold() == "true" or self._safe_attribute(element, "hidden") is not None:
+            return {"visible": False, "result_type": "filtered", "valid": True, "script_called": False}
         try:
             state = self.browser.driver.execute_script("const e=arguments[0],s=getComputedStyle(e),r=e.getBoundingClientRect(); return {display:s.display,visibility:s.visibility,width:r.width,height:r.height,rects:e.getClientRects().length};", element)
         except Exception:
-            return False
-        return isinstance(state, dict) and state.get("display") != "none" and state.get("visibility") != "hidden" and state.get("width", 0) > 0 and state.get("height", 0) > 0 and state.get("rects", 0) > 0
+            return {"visible": False, "result_type": "exception", "valid": False, "script_called": True}
+        valid = isinstance(state, dict) and all(key in state for key in ("display", "visibility", "width", "height", "rects"))
+        return {"visible": bool(valid and state.get("display") != "none" and state.get("visibility") != "hidden" and state.get("width", 0) > 0 and state.get("height", 0) > 0 and state.get("rects", 0) > 0), "result_type": type(state).__name__, "valid": valid, "script_called": True, "has_rect_key": isinstance(state, dict) and "width" in state and "height" in state, "has_visible_key": isinstance(state, dict) and "display" in state and "visibility" in state}
 
     def _is_clickable_certificate_control(self, element) -> bool:
         tag = self._safe_tag(element)

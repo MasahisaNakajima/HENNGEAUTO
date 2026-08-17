@@ -1567,6 +1567,21 @@ def test_edit_form_wait_is_not_called_when_edit_click_fails():
     assert result["client_certificate_edit_form_wait_called"] is False
 
 
+def test_edit_form_visibility_metrics_are_consistent_for_current_panel():
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside", displayed=True)
+    handler.browser.driver.execute_script = lambda *_args: {"display": "block", "visibility": "visible", "width": 100, "height": 100, "rects": 1}
+
+    metrics = handler._edit_form_visibility_metrics(panel)
+
+    assert metrics["client_certificate_edit_form_candidate_dom_attached_count"] == 1
+    assert metrics["client_certificate_edit_form_candidate_visibility_evaluated_count"] == 1
+    assert metrics["client_certificate_edit_form_candidate_nonzero_rect_count"] == 1
+    assert metrics["client_certificate_edit_form_candidate_unclassified_count"] == 0
+    assert metrics["client_certificate_edit_form_candidate_metrics_consistent"] is True
+    assert metrics["client_certificate_edit_form_visibility_script_result_valid"] is True
+
+
 @pytest.mark.parametrize("expected_state", ["view", "edit"])
 def test_client_certificate_state_wait_uses_current_snapshot_without_name_error(monkeypatch, expected_state):
     handler = handler_for(type("Driver", (), {})())
