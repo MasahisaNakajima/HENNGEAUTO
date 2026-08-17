@@ -1560,6 +1560,8 @@ def test_edit_form_wait_reuses_same_panel_and_refreshes_children():
     assert result["client_certificate_panel_same_dom_identity_after_edit"] is True
     assert result["client_certificate_panel_reacquired_after_edit"] is False
     assert result["client_certificate_edit_form_same_panel_state_refresh"] is True
+    assert result["client_certificate_edit_form_wait_received_old_panel"] is True
+    assert result["client_certificate_panel_identity_available_after_edit"] is True
 
 
 def test_edit_form_wait_reacquires_panel_when_old_panel_is_stale(monkeypatch):
