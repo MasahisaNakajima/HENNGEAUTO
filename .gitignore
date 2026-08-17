@@ -1,0 +1,13 @@
+config/settings.json
+config/*.invalid.json
+*.xlsm
+*.xlsx
+*.p12
+*.pfx
+logs/
+screenshots/
+downloads/
+__pycache__/
+.pytest_cache/
+*.log
+.vscode/
