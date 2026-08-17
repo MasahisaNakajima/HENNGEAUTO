@@ -1567,6 +1567,35 @@ def test_edit_form_wait_is_not_called_when_edit_click_fails():
     assert result["client_certificate_edit_form_wait_called"] is False
 
 
+@pytest.mark.parametrize("expected_state", ["view", "edit"])
+def test_client_certificate_state_wait_uses_current_snapshot_without_name_error(monkeypatch, expected_state):
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside")
+    handler._wait_for_named_panel = lambda *_args, **_kwargs: {"candidate_count": 1, "unique": True, "visible": True, "panel": panel}
+    handler._classify_client_certificate_panel = lambda _panel: {
+        "client_certificate_view_state_detected": expected_state == "view",
+        "client_certificate_edit_state_detected": expected_state == "edit",
+        "client_certificate_selection_control_candidate_count": 1 if expected_state == "edit" else 0,
+        "client_certificate_save_candidate_count": 1 if expected_state == "edit" else 0,
+        "client_certificate_cancel_candidate_count": 1 if expected_state == "edit" else 0,
+        "client_certificate_reference_edit_control_candidate_count": 1 if expected_state == "view" else 0,
+    }
+
+    class ImmediateWait:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def until(self, predicate):
+            return predicate(handler.browser.driver)
+
+    monkeypatch.setattr(smsm_handler_module, "WebDriverWait", ImmediateWait)
+
+    result = handler._wait_for_client_certificate_state(timeout=1, expected_state=expected_state)
+
+    assert result["client_certificate_state_wait_completed"] is True
+    assert result["client_certificate_edit_state_detected"] is (expected_state == "edit")
+
+
 class _FallbackPanelNode:
     def __init__(self, *, text="", parent=None, clickables=None):
         self.text = text

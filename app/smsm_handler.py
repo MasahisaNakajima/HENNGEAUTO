@@ -984,12 +984,12 @@ class SmsmHandler:
             panel = WebDriverWait(self.browser.driver, timeout, poll_frequency=0.25).until(locate)
         except TimeoutException:
             panel = None
-        if latest is not None:
-            latest["client_certificate_edit_state_detected"] = bool(
-                latest.get("client_certificate_selection_control_candidate_count") == 1
-                and latest.get("client_certificate_save_candidate_count") == 1
-                and latest.get("client_certificate_cancel_candidate_count") == 1
-                and not latest.get("client_certificate_reference_edit_control_candidate_count")
+        if snapshot is not None:
+            snapshot["client_certificate_edit_state_detected"] = bool(
+                snapshot.get("client_certificate_selection_control_candidate_count") == 1
+                and snapshot.get("client_certificate_save_candidate_count") == 1
+                and snapshot.get("client_certificate_cancel_candidate_count") == 1
+                and not snapshot.get("client_certificate_reference_edit_control_candidate_count")
             )
         state = snapshot or self._empty_client_certificate_state()
         state.update({
