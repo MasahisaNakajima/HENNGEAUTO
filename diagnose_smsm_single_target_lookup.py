@@ -2540,10 +2540,15 @@ def _run_smsm_client_certificate_imei_input_only(args: list[str]) -> int:
                 and result.get("device_imei_input_was_truncated") is False
                 and result.get("device_imei_input_was_duplicated") is False
                 and result.get("device_imei_input_was_transformed") is False
-                and result.get("client_certificate_imei_suggestion_container_unique") is True
-                and result.get("client_certificate_imei_suggestion_container_visible") is True
-                and result.get("client_certificate_imei_suggestion_visible_option_count", 0) >= 1
-                and result.get("client_certificate_imei_exact_option_unique") is True
+                and (
+                    (
+                        result.get("client_certificate_imei_suggestion_container_unique") is True
+                        and result.get("client_certificate_imei_suggestion_container_visible") is True
+                        and result.get("client_certificate_imei_suggestion_visible_option_count", 0) >= 1
+                        and result.get("client_certificate_imei_exact_option_unique") is True
+                    )
+                    or result.get("client_certificate_imei_near_input_candidate_unique") is True
+                )
                 and not any(operations.values())
             )
             result["failed_stage"] = "" if success else "client_certificate_imei_input_only_wait_suggestions"

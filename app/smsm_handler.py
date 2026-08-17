@@ -1328,6 +1328,18 @@ class SmsmHandler:
             "client_certificate_imei_exact_option_unique": False,
             "client_certificate_imei_exact_option_found": False,
             "client_certificate_imei_exact_option_resolution_method": "unresolved",
+            "client_certificate_imei_near_input_scan_called": False,
+            "client_certificate_imei_near_input_raw_candidate_count": 0,
+            "client_certificate_imei_near_input_visible_candidate_count": 0,
+            "client_certificate_imei_near_input_nonzero_rect_count": 0,
+            "client_certificate_imei_near_input_below_input_count": 0,
+            "client_certificate_imei_near_input_same_field_count": 0,
+            "client_certificate_imei_near_input_same_panel_count": 0,
+            "client_certificate_imei_near_input_exact_match_count": 0,
+            "client_certificate_imei_near_input_candidate_count": 0,
+            "client_certificate_imei_near_input_candidate_unique": False,
+            "client_certificate_imei_near_input_candidate_visible": False,
+            "client_certificate_imei_suggestion_resolution_method": "unresolved",
             "client_certificate_suggestion_click_called": False,
             "client_certificate_suggestion_click_count": 0,
             "client_certificate_option_selection_called": False,
@@ -1393,6 +1405,7 @@ class SmsmHandler:
                 value = str(self._safe_attribute(option, "value") or "")
                 if text == imei or value == imei:
                     exact.append(option)
+            near = self._near_input_suggestion_snapshot(panel, input_element, imei)
             last = {
                 "client_certificate_imei_suggestion_container_candidate_count": len(containers),
                 "client_certificate_imei_suggestion_container_unique": len(containers) == 1,
@@ -1407,8 +1420,9 @@ class SmsmHandler:
                 "client_certificate_imei_exact_option_found": bool(exact),
                 "client_certificate_imei_exact_option_resolution_method": "exact_text" if exact else "unresolved",
                 "client_certificate_imei_suggestion_relation_method": "aria_or_panel_descendant",
+                **near,
             }
-            return bool(visible_containers and visible_options and len(exact) == 1)
+            return bool((visible_containers and visible_options and len(exact) == 1) or near.get("client_certificate_imei_near_input_candidate_unique") is True)
         try:
             WebDriverWait(self.browser.driver, 10, poll_frequency=0.25).until(locate)
             completed = True
@@ -1423,6 +1437,57 @@ class SmsmHandler:
         })
         self._trace(trace, "client_certificate_imei_suggestion_wait_completed", completed)
         return result
+
+    def _near_input_suggestion_snapshot(self, panel, input_element, imei: str) -> dict[str, object]:
+        defaults = {
+            "client_certificate_imei_near_input_scan_called": True,
+            "client_certificate_imei_near_input_raw_candidate_count": 0,
+            "client_certificate_imei_near_input_visible_candidate_count": 0,
+            "client_certificate_imei_near_input_nonzero_rect_count": 0,
+            "client_certificate_imei_near_input_below_input_count": 0,
+            "client_certificate_imei_near_input_same_field_count": 0,
+            "client_certificate_imei_near_input_same_panel_count": 0,
+            "client_certificate_imei_near_input_exact_match_count": 0,
+            "client_certificate_imei_near_input_candidate_count": 0,
+            "client_certificate_imei_near_input_candidate_unique": False,
+            "client_certificate_imei_near_input_candidate_visible": False,
+            "client_certificate_imei_suggestion_resolution_method": "unresolved",
+        }
+        try:
+            observed = self.browser.driver.execute_script("""
+                const panel=arguments[0], input=arguments[1], expected=arguments[2];
+                const visible=e => { const r=e.getBoundingClientRect(), s=getComputedStyle(e); return !e.hidden && s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
+                const inputRect=input.getBoundingClientRect();
+                let root=input.parentElement;
+                for (let i=0; i<3 && root && !root.contains(input); i++) root=root.parentElement;
+                root=root || input.parentElement;
+                const all=[...root.querySelectorAll('div,button,span,li,[role="option"],[role="listitem"],[role="listbox"],[tabindex]')];
+                const candidates=all.filter(e => e !== input && !input.contains(e) && panel.contains(e));
+                const safeText=e => String(e.innerText || e.textContent || e.value || '').trim();
+                const notAction=e => !/^(保存|取消|save|cancel)$/i.test(safeText(e));
+                const visibleCandidates=candidates.filter(e => visible(e));
+                const nonzero=visibleCandidates.filter(e => { const r=e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+                const below=nonzero.filter(e => e.getBoundingClientRect().top >= inputRect.bottom);
+                const near=below.filter(e => e.getBoundingClientRect().top - inputRect.bottom <= 160);
+                const exact=near.filter(e => notAction(e) && safeText(e) === expected);
+                return { raw:candidates.length, visible:visibleCandidates.length, nonzero:nonzero.length, below:below.length, same_field:near.length, same_panel:near.length, exact:exact.length, candidate:exact.length, unique:exact.length === 1, visible_candidate:exact.length === 1, method:exact.length === 1 ? 'exact_text_near_input' : 'unresolved' };
+            """, panel, input_element, imei) or {}
+            mapping = {
+                "client_certificate_imei_near_input_raw_candidate_count": "raw",
+                "client_certificate_imei_near_input_visible_candidate_count": "visible",
+                "client_certificate_imei_near_input_nonzero_rect_count": "nonzero",
+                "client_certificate_imei_near_input_below_input_count": "below",
+                "client_certificate_imei_near_input_same_field_count": "same_field",
+                "client_certificate_imei_near_input_same_panel_count": "same_panel",
+                "client_certificate_imei_near_input_exact_match_count": "exact",
+                "client_certificate_imei_near_input_candidate_count": "candidate",
+                "client_certificate_imei_near_input_candidate_unique": "unique",
+                "client_certificate_imei_near_input_candidate_visible": "visible_candidate",
+                "client_certificate_imei_suggestion_resolution_method": "method",
+            }
+            return {**defaults, **{key: observed.get(source, defaults[key]) for key, source in mapping.items()}}
+        except Exception:
+            return defaults
 
     @staticmethod
     def _certificate_edit_transition_detected(result: dict[str, object]) -> bool:

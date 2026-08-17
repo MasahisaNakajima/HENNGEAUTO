@@ -1639,6 +1639,67 @@ def test_imei_send_keys_does_not_retry_when_input_value_mismatches():
     assert result["client_certificate_imei_suggestion_wait_called"] is False
 
 
+def test_imei_suggestion_near_input_fallback_accepts_exact_text_without_aria_container(monkeypatch):
+    handler = handler_for(type("Driver", (), {})())
+    input_node = DomNode("input", attrs={"type": "text", "tabindex": "0"})
+    panel = DomNode("aside")
+    handler._safe_find_elements_from = lambda _element, _by, selector: [input_node] if selector == "input,textarea,[role='combobox'],[contenteditable='true']" else []
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+    handler.browser.driver.execute_script = lambda *_args: {
+        "raw": 1,
+        "visible": 1,
+        "nonzero": 1,
+        "below": 1,
+        "same_field": 1,
+        "same_panel": 1,
+        "exact": 1,
+        "candidate": 1,
+        "unique": True,
+        "visible_candidate": True,
+        "method": "exact_text_near_input",
+    }
+
+    class ImmediateWait:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def until(self, predicate):
+            assert predicate(None) is True
+            return True
+
+    monkeypatch.setattr(smsm_handler_module, "WebDriverWait", ImmediateWait)
+    result = handler.send_imei_once_and_inspect_suggestions(panel, "123456789012345")
+
+    assert result["client_certificate_imei_suggestion_container_candidate_count"] == 0
+    assert result["client_certificate_imei_near_input_candidate_count"] == 1
+    assert result["client_certificate_imei_near_input_candidate_unique"] is True
+    assert result["client_certificate_imei_suggestion_resolution_method"] == "exact_text_near_input"
+    assert result["client_certificate_imei_suggestion_wait_completed"] is True
+
+
+def test_imei_suggestion_near_input_partial_match_is_not_accepted(monkeypatch):
+    handler = handler_for(type("Driver", (), {})())
+    input_node = DomNode("input", attrs={"type": "text", "tabindex": "0"})
+    panel = DomNode("aside")
+    handler._safe_find_elements_from = lambda _element, _by, selector: [input_node] if selector == "input,textarea,[role='combobox'],[contenteditable='true']" else []
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+    handler.browser.driver.execute_script = lambda *_args: {"raw": 1, "visible": 1, "nonzero": 1, "below": 1, "same_field": 1, "same_panel": 1, "exact": 0, "candidate": 0, "unique": False, "visible_candidate": False, "method": "unresolved"}
+
+    class TimeoutWait:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def until(self, predicate):
+            predicate(None)
+            raise smsm_handler_module.TimeoutException()
+
+    monkeypatch.setattr(smsm_handler_module, "WebDriverWait", TimeoutWait)
+    result = handler.send_imei_once_and_inspect_suggestions(panel, "123456789012345")
+
+    assert result["client_certificate_imei_near_input_exact_match_count"] == 0
+    assert result["client_certificate_imei_suggestion_wait_completed"] is False
+
+
 def test_edit_marker_wait_succeeds_without_strict_form_wait(monkeypatch):
     handler = handler_for(type("Driver", (), {})())
     panel = DomNode("aside")
