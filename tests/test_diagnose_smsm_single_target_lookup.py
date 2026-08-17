@@ -1805,6 +1805,8 @@ def _edit_form_success_result(**overrides):
         "other_settings_click_count": 1,
         "client_certificate_item_click_count": 1,
         "client_certificate_edit_state_detected": True,
+        "client_certificate_edit_marker_wait_completed": True,
+        "client_certificate_edit_marker_last_snapshot_available": True,
         "client_certificate_edit_transition_detected": True,
         "client_certificate_after_snapshot_created": True,
         "client_certificate_after_snapshot_uses_current_classification": True,

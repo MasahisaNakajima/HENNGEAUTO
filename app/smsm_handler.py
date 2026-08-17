@@ -1033,6 +1033,12 @@ class SmsmHandler:
             "client_certificate_after_snapshot_uses_current_classification": False,
             "client_certificate_after_snapshot_uses_before_fallback": False,
             "client_certificate_after_snapshot_metrics_consistent": False,
+            "client_certificate_edit_marker_wait_called": False,
+            "client_certificate_edit_marker_wait_completed": False,
+            "client_certificate_edit_marker_wait_iteration_count": 0,
+            "client_certificate_edit_marker_wait_timeout": False,
+            "client_certificate_edit_marker_last_snapshot_available": False,
+            "client_certificate_edit_marker_success_iteration": 0,
             "client_certificate_edit_transition_detected": False,
             "client_certificate_unconfigured_disappeared": False,
             "client_certificate_edit_disappeared": False,
@@ -1149,24 +1155,15 @@ class SmsmHandler:
             result["client_certificate_before_save_count"] = result.get("client_certificate_save_candidate_count", 0)
             result["client_certificate_before_cancel_count"] = result.get("client_certificate_cancel_candidate_count", 0)
             result["client_certificate_before_control_element_count"] = result.get("client_certificate_selection_control_candidate_count", 0)
-            refreshed = self._wait_for_client_certificate_edit_form(timeout=10, trace=trace, panel=panel)
+            refreshed = self._wait_for_client_certificate_edit_markers(timeout=10, trace=trace, panel=panel)
             result.update({key: value for key, value in refreshed.items() if key != "panel"})
-            if not refreshed.get("client_certificate_edit_state_detected"):
-                result.pop("client_certificate_panel", None)
-                return result
-            panel = refreshed["panel"]
-            result["client_certificate_panel"] = panel
-            result.update({
-                "client_certificate_edit_form_candidate_count": 1,
-                "client_certificate_edit_form_unique": True,
-                "client_certificate_edit_form_visible": self._safe_bool(panel, "is_displayed"),
-                "client_certificate_edit_form_resolution_method": "refetched_minimal_landmark_container",
-                "client_certificate_edit_form_refetched": True,
-                "client_certificate_edit_form_contains_search_input": bool(self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input[name*='query' i],input[aria-label*='search' i]")),
-                "client_certificate_edit_form_contains_result_table": bool(self._safe_find_elements_from(panel, By.CSS_SELECTOR, "table")),
-            })
-            after_snapshot = self._certificate_after_snapshot(refreshed, panel)
-            result.update(after_snapshot)
+            panel = refreshed.get("panel")
+            if panel is not None:
+                result["client_certificate_panel"] = panel
+            result["client_certificate_edit_form_candidate_count"] = refreshed.get("client_certificate_edit_form_candidate_count", 0)
+            result["client_certificate_edit_form_unique"] = refreshed.get("client_certificate_edit_form_unique", False)
+            result["client_certificate_edit_form_refetched"] = refreshed.get("client_certificate_edit_form_refetched", False)
+            result.update(self._certificate_after_snapshot(refreshed, panel))
             result["client_certificate_edit_transition_detected"] = self._certificate_edit_transition_detected(result)
             result["client_certificate_unconfigured_disappeared"] = result.get("client_certificate_after_unconfigured_count") == 0
             result["client_certificate_edit_disappeared"] = result.get("client_certificate_after_edit_count") == 0
@@ -1247,6 +1244,69 @@ class SmsmHandler:
                 and control_count >= 0
             ),
         }
+
+    def _wait_for_client_certificate_edit_markers(self, timeout: float = 10.0, trace=None, panel=None) -> dict[str, object]:
+        iterations = 0
+        success_iteration = 0
+        last_classification = None
+        last_snapshot = None
+        current_panel = panel
+        self._trace(trace, "client_certificate_edit_marker_wait_called", True)
+
+        def locate(_driver):
+            nonlocal iterations, success_iteration, last_classification, last_snapshot, current_panel
+            iterations += 1
+            if current_panel is not None:
+                try:
+                    current_panel.is_enabled()
+                except StaleElementReferenceException:
+                    current_panel = None
+            if current_panel is None:
+                candidate = self._wait_for_named_panel(("クライアント証明書", "Client certificate"), timeout=0.1)
+                current_panel = candidate.get("panel") if candidate.get("panel") is not None else None
+            if current_panel is None:
+                return False
+            classification = self._classify_client_certificate_panel(current_panel)
+            classification.update(self._edit_form_control_metrics(current_panel, classification))
+            classification.update({
+                "client_certificate_edit_form_edit_candidate_count": int(classification.get("client_certificate_edit_candidate_count", 0) or 0),
+                "client_certificate_edit_form_save_candidate_count": int(classification.get("client_certificate_save_candidate_count", 0) or 0),
+                "client_certificate_edit_form_cancel_candidate_count": int(classification.get("client_certificate_cancel_candidate_count", 0) or 0),
+                "client_certificate_edit_form_control_candidate_count": int(classification.get("client_certificate_selection_control_candidate_count", 0) or 0),
+            })
+            last_classification = classification
+            last_snapshot = self._certificate_after_snapshot(classification, current_panel)
+            marker_success = all((
+                last_snapshot.get("client_certificate_after_unconfigured_count") == 0,
+                last_snapshot.get("client_certificate_after_edit_count") == 0,
+                last_snapshot.get("client_certificate_after_save_count") == 1,
+                last_snapshot.get("client_certificate_after_cancel_count") == 1,
+                last_snapshot.get("client_certificate_after_control_element_count", 0) >= 1,
+            ))
+            if marker_success:
+                success_iteration = iterations
+                return True
+            return False
+
+        try:
+            WebDriverWait(self.browser.driver, timeout, poll_frequency=0.25).until(locate)
+            completed = True
+        except TimeoutException:
+            completed = False
+        result = dict(last_classification or self._empty_client_certificate_state())
+        if last_snapshot:
+            result.update(last_snapshot)
+        result.update({
+            "panel": current_panel,
+            "client_certificate_edit_marker_wait_called": True,
+            "client_certificate_edit_marker_wait_completed": completed,
+            "client_certificate_edit_marker_wait_iteration_count": iterations,
+            "client_certificate_edit_marker_wait_timeout": not completed,
+            "client_certificate_edit_marker_last_snapshot_available": last_snapshot is not None,
+            "client_certificate_edit_marker_success_iteration": success_iteration,
+        })
+        self._trace(trace, "client_certificate_edit_marker_wait_completed", completed)
+        return result
 
     @staticmethod
     def _certificate_state_counts(state: dict[str, object]) -> dict[str, object]:

@@ -1550,6 +1550,112 @@ def test_certificate_after_snapshot_uses_current_edit_classification_not_before_
     assert snapshot["client_certificate_after_snapshot_metrics_consistent"] is True
 
 
+def test_edit_marker_wait_succeeds_without_strict_form_wait(monkeypatch):
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside")
+    classification = {
+        "client_certificate_unconfigured_text_candidate_count": 0,
+        "client_certificate_edit_candidate_count": 0,
+        "client_certificate_save_candidate_count": 1,
+        "client_certificate_cancel_candidate_count": 1,
+        "client_certificate_selection_control_candidate_count": 2,
+    }
+
+    class ImmediateWait:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def until(self, predicate):
+            assert predicate(None) is True
+            return True
+
+    monkeypatch.setattr(smsm_handler_module, "WebDriverWait", ImmediateWait)
+    handler._classify_client_certificate_panel = lambda _panel: dict(classification)
+
+    result = handler._wait_for_client_certificate_edit_markers(timeout=1, panel=panel)
+
+    assert result["client_certificate_edit_marker_wait_called"] is True
+    assert result["client_certificate_edit_marker_wait_completed"] is True
+    assert result["client_certificate_edit_marker_wait_timeout"] is False
+    assert result["client_certificate_edit_marker_last_snapshot_available"] is True
+    assert result["client_certificate_edit_marker_success_iteration"] == 1
+    assert result["client_certificate_after_edit_count"] == 0
+    assert result["client_certificate_after_save_count"] == 1
+    assert result["client_certificate_after_cancel_count"] == 1
+    assert result["client_certificate_after_control_element_count"] == 2
+
+
+def test_edit_marker_wait_timeout_keeps_last_after_snapshot(monkeypatch):
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside")
+    classification = {
+        "client_certificate_unconfigured_text_candidate_count": 0,
+        "client_certificate_edit_candidate_count": 0,
+        "client_certificate_save_candidate_count": 1,
+        "client_certificate_cancel_candidate_count": 1,
+        "client_certificate_selection_control_candidate_count": 2,
+    }
+
+    class TimeoutWait:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def until(self, predicate):
+            predicate(None)
+            raise smsm_handler_module.TimeoutException()
+
+    monkeypatch.setattr(smsm_handler_module, "WebDriverWait", TimeoutWait)
+    handler._classify_client_certificate_panel = lambda _panel: dict(classification)
+
+    result = handler._wait_for_client_certificate_edit_markers(timeout=1, panel=panel)
+
+    assert result["client_certificate_edit_marker_wait_completed"] is False
+    assert result["client_certificate_edit_marker_wait_timeout"] is True
+    assert result["client_certificate_edit_marker_last_snapshot_available"] is True
+    assert result["client_certificate_after_snapshot_created"] is True
+    assert result["client_certificate_after_save_count"] == 1
+
+
+def test_edit_form_inspection_uses_marker_wait_when_strict_form_wait_would_fail():
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside")
+    handler.inspect_client_certificate_navigation_only = lambda _serial, trace=None: {
+        "client_certificate_panel": panel,
+        "client_certificate_panel_unique": True,
+        "device_result_identity_verified": True,
+        "other_settings_click_count": 1,
+        "client_certificate_item_click_count": 1,
+    }
+    handler._wait_for_client_certificate_state = lambda **_kwargs: {
+        "panel": panel,
+        "client_certificate_view_state_detected": True,
+        "client_certificate_edit_state_detected": False,
+        "client_certificate_unconfigured_text_candidate_count": 1,
+        "client_certificate_edit_candidate_count": 1,
+        "client_certificate_save_candidate_count": 0,
+        "client_certificate_cancel_candidate_count": 0,
+    }
+    edit = DomNode("button", text="編集")
+    edit.click = lambda: None
+    handler._certificate_edit_candidates = lambda _panel: [edit]
+    handler._wait_for_client_certificate_edit_form = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("strict wait must not run"))
+    handler._wait_for_client_certificate_edit_markers = lambda **_kwargs: {
+        "panel": panel,
+        "client_certificate_edit_marker_wait_completed": True,
+        "client_certificate_edit_marker_last_snapshot_available": True,
+        "client_certificate_edit_state_detected": True,
+        "client_certificate_edit_form_edit_candidate_count": 0,
+        "client_certificate_edit_form_save_candidate_count": 1,
+        "client_certificate_edit_form_cancel_candidate_count": 1,
+        "client_certificate_edit_form_control_candidate_count": 2,
+        "client_certificate_after_snapshot_created": True,
+    }
+
+    result = handler.inspect_client_certificate_edit_form_only("serial")
+
+    assert result["client_certificate_edit_marker_wait_completed"] is True
+
+
 def test_client_certificate_input_and_expand_button_are_one_logical_control():
     handler = handler_for(type("Driver", (), {})())
     panel = DomNode("aside", text="クライアント証明書（デフォルト） 保存 取消")

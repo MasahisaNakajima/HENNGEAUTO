@@ -2195,6 +2195,8 @@ def _client_certificate_edit_form_success(result: dict[str, object], operations:
         result.get("client_certificate_item_click_count") == 1,
         result.get("client_certificate_edit_state_detected") is True,
         result.get("client_certificate_edit_transition_detected") is True,
+        result.get("client_certificate_edit_marker_wait_completed") is True,
+        result.get("client_certificate_edit_marker_last_snapshot_available") is True,
         result.get("client_certificate_after_snapshot_created") is True,
         result.get("client_certificate_after_snapshot_uses_current_classification") is True,
         result.get("client_certificate_after_snapshot_uses_before_fallback") is False,
