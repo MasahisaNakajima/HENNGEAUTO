@@ -1786,6 +1786,33 @@ def test_client_certificate_imei_input_only_option_selects_dedicated_route(monke
     assert calls == [["--inspect-smsm-client-certificate-imei-input-only"]]
 
 
+def test_client_certificate_direct_save_readiness_only_option_selects_dedicated_route(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mod, "_run_smsm_client_certificate_imei_direct_save_readiness_only", lambda args: calls.append(args) or 0)
+
+    assert mod.main(["--inspect-smsm-client-certificate-imei-direct-save-readiness-only"]) == 0
+    assert calls == [["--inspect-smsm-client-certificate-imei-direct-save-readiness-only"]]
+
+
+@pytest.mark.parametrize("conflict", [
+    "--inspect-smsm-client-certificate-edit-form-only",
+    "--inspect-smsm-client-certificate-primary-input-only",
+    "--inspect-smsm-client-certificate-imei-input-only",
+    "--inspect-smsm-client-certificate-imei-option-selection-only",
+    "--run-single-certificate-workflow",
+])
+def test_direct_save_readiness_rejects_conflicts_before_browser(monkeypatch, capsys, conflict):
+    monkeypatch.setattr(mod, "Browser", lambda *_args: (_ for _ in ()).throw(AssertionError("browser must not start")))
+
+    assert mod._run_smsm_client_certificate_imei_direct_save_readiness_only([
+        "--inspect-smsm-client-certificate-imei-direct-save-readiness-only", conflict,
+    ]) == 2
+    output = capsys.readouterr().out
+    assert "failed_stage=cli_flag_validation" in output
+    assert "browser_start_called=False" in output
+    assert "device_imei_send_keys_called=False" in output
+
+
 @pytest.mark.parametrize("conflict", [
     "--inspect-smsm-client-certificate-edit-form-only",
     "--inspect-smsm-client-certificate-primary-input-only",

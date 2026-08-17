@@ -1567,6 +1567,90 @@ class SmsmHandler:
         except Exception:
             return defaults
 
+    def inspect_direct_save_readiness_without_selection(self, panel, input_element, imei: str, suggestion: dict[str, object] | None = None, trace=None) -> dict[str, object]:
+        """Observe save readiness while leaving the suggestion unselected."""
+        suggestion = suggestion or {}
+        if input_element is None and panel is not None:
+            primary = self.inspect_primary_client_certificate_input(panel)
+            candidates = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input,textarea,[role='combobox'],[contenteditable='true']")
+            eligible = []
+            for candidate in candidates:
+                visible = self._safe_bool(candidate, "is_displayed") or self._dom_visibility_probe(candidate).get("visible")
+                input_type = str(self._safe_attribute(candidate, "type") or "").casefold()
+                disabled = self._safe_bool_attribute(candidate, "disabled") or not self._safe_bool(candidate, "is_enabled")
+                if visible and input_type != "hidden" and not disabled:
+                    eligible.append(candidate)
+            if primary.get("client_certificate_primary_input_resolved") is True and len(eligible) == 1:
+                input_element = eligible[0]
+        inputs = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input") if panel is not None else []
+        hidden = [item for item in inputs if str(self._safe_attribute(item, "type") or "").casefold() == "hidden"]
+        related = [item for item in inputs if item is not input_element and item not in hidden]
+        primary_value = self._input_value(input_element) if input_element is not None else ""
+        related_values = [self._input_value(item) for item in related]
+        hidden_values = [self._input_value(item) for item in hidden]
+        exact_related = sum(value == imei and bool(value) for value in related_values)
+        selection_id_present = any(bool(value) for value in hidden_values)
+        controls = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button']") if panel is not None else []
+        save = [item for item in controls if self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)) == "保存"]
+        cancel = [item for item in controls if self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)) == "取消"]
+        candidate_count = suggestion.get("client_certificate_imei_near_input_exact_deduplicated_count", suggestion.get("client_certificate_imei_exact_option_candidate_count", 0))
+        candidate_visible = suggestion.get("client_certificate_imei_near_input_candidate_visible") is True or suggestion.get("client_certificate_imei_suggestion_listbox_visible") is True
+        candidate_click_count = suggestion.get("client_certificate_suggestion_click_count", 0)
+        option_count = suggestion.get("client_certificate_option_selection_count", 0)
+        candidate_unselected = candidate_click_count == 0 and option_count == 0 and suggestion.get("client_certificate_suggestion_keyboard_selection_count", 0) == 0
+        save_unique = len(save) == 1
+        cancel_unique = len(cancel) == 1
+        primary_exact = bool(primary_value) and primary_value == imei
+        related_exact = exact_related > 0
+        if primary_exact and related_exact and selection_id_present:
+            method = "primary_and_related_value_present"
+        elif primary_exact and related_exact:
+            method = "related_input_exact_match"
+        elif selection_id_present:
+            method = "hidden_selection_value_present"
+        elif primary_exact:
+            method = "primary_value_only"
+        else:
+            method = "unresolved"
+        result = {
+            "client_certificate_primary_input_click_called": False,
+            "client_certificate_primary_input_focus_called": False,
+            "client_certificate_primary_input_value_write_called": False,
+            "client_certificate_direct_save_readiness_candidate_visible": candidate_visible,
+            "client_certificate_direct_save_readiness_exact_candidate_count": candidate_count,
+            "client_certificate_direct_save_readiness_exact_candidate_unique": candidate_count == 1,
+            "client_certificate_direct_save_readiness_candidate_click_count": candidate_click_count,
+            "client_certificate_direct_save_readiness_option_selection_count": option_count,
+            "client_certificate_direct_save_readiness_candidate_unselected": candidate_unselected,
+            "client_certificate_direct_save_readiness_primary_value_present": bool(primary_value),
+            "client_certificate_direct_save_readiness_primary_value_exact_match": primary_exact,
+            "client_certificate_direct_save_readiness_hidden_input_count": len(hidden),
+            "client_certificate_direct_save_readiness_nonblank_hidden_input_count": sum(bool(value) for value in hidden_values),
+            "client_certificate_direct_save_readiness_related_input_count": len(related),
+            "client_certificate_direct_save_readiness_nonblank_related_input_count": sum(bool(value) for value in related_values),
+            "client_certificate_direct_save_readiness_related_exact_match_count": exact_related,
+            "client_certificate_direct_save_readiness_selection_id_present": selection_id_present,
+            "client_certificate_direct_save_readiness_internal_value_present": bool(primary_value or related_values or hidden_values),
+            "client_certificate_direct_save_readiness_internal_value_resolution_method": method,
+            "client_certificate_direct_save_readiness_save_refetched": True,
+            "client_certificate_direct_save_readiness_save_candidate_count": len(save),
+            "client_certificate_direct_save_readiness_save_unique": save_unique,
+            "client_certificate_direct_save_readiness_save_exact_match": save_unique,
+            "client_certificate_direct_save_readiness_save_visible": save_unique and self._safe_bool(save[0], "is_displayed"),
+            "client_certificate_direct_save_readiness_save_enabled": save_unique and self._safe_bool(save[0], "is_enabled"),
+            "client_certificate_direct_save_readiness_save_inside_edit_panel": save_unique,
+            "client_certificate_direct_save_readiness_save_click_called": False,
+            "client_certificate_direct_save_readiness_cancel_refetched": True,
+            "client_certificate_direct_save_readiness_cancel_candidate_count": len(cancel),
+            "client_certificate_direct_save_readiness_cancel_unique": cancel_unique,
+            "client_certificate_direct_save_readiness_cancel_exact_match": cancel_unique,
+            "client_certificate_direct_save_readiness_cancel_visible": cancel_unique and self._safe_bool(cancel[0], "is_displayed"),
+            "client_certificate_direct_save_readiness_cancel_enabled": cancel_unique and self._safe_bool(cancel[0], "is_enabled"),
+            "client_certificate_direct_save_readiness_cancel_click_called": False,
+        }
+        self._trace(trace, "client_certificate_direct_save_readiness_inspection_completed", True)
+        return result
+
     def click_exact_imei_suggestion_once_and_verify(self, panel, input_element, imei: str, trace=None, candidate=None) -> dict[str, object]:
         result = {
             "client_certificate_suggestion_click_called": False,

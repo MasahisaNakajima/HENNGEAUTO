@@ -2009,6 +2009,182 @@ def _run_lookup(argv: list[str] | None = None) -> int:
             raise BrowserQuitFailedError("browser quit failed")
 
 
+def _run_smsm_client_certificate_imei_direct_save_readiness_only(args: list[str]) -> int:
+    logger = AppLogger(_base_dir(), unique_log=True)
+    browser = None
+    flag = "--inspect-smsm-client-certificate-imei-direct-save-readiness-only"
+    current_stage = "client_certificate_direct_save_readiness_only_cli_validation"
+    last_completed_stage = ""
+    observations = {
+        "client_certificate_direct_save_readiness_only_runner_called": True,
+        "client_certificate_direct_save_readiness_only_result_available": False,
+        "client_certificate_direct_save_readiness_only_output_called": False,
+        "client_certificate_direct_save_readiness_only_output_completed": False,
+        "client_certificate_direct_save_readiness_only_success": False,
+        "browser_start_called": False,
+        "device_imei_send_keys_called": False,
+        "device_imei_send_keys_count": 0,
+        "client_certificate_suggestion_click_called": False,
+        "client_certificate_suggestion_click_count": 0,
+        "client_certificate_option_selection_called": False,
+        "client_certificate_option_selection_count": 0,
+        "client_certificate_suggestion_keyboard_selection_called": False,
+        "client_certificate_suggestion_keyboard_selection_count": 0,
+        "device_binding_save_called": False,
+        "device_binding_save_count": 0,
+        "client_certificate_cancel_click_called": False,
+        "excel_write_called": False,
+        "certificate_upload_called": False,
+        "client_certificate_direct_save_readiness_save_click_called": False,
+        "client_certificate_direct_save_readiness_cancel_click_called": False,
+    }
+    forbidden_flags = {
+        "--inspect-smsm-client-certificate-edit-form-only",
+        "--inspect-smsm-client-certificate-primary-input-only",
+        "--inspect-smsm-client-certificate-imei-input-only",
+        "--inspect-smsm-client-certificate-imei-option-selection-only",
+        "--run-single-certificate-workflow", "--prepare-smsm-certificate-upload",
+        "--bind-existing-smsm-certificate", "--allow-device-binding",
+        "--allow-excel-write", "--allow-certificate-upload", "--lookup",
+    }
+    if args != [flag] or any(item in forbidden_flags for item in args):
+        observations["failed_stage"] = "cli_flag_validation"
+        observations["exception_type"] = "ArgumentError"
+        observations["exception_message_class"] = "cli_conflict"
+        for key, value in observations.items():
+            _emit(logger, key, value)
+            print(f"{key}={value}")
+        return 2
+
+    def advance(stage: str) -> None:
+        nonlocal current_stage
+        current_stage = stage
+
+    def complete(stage: str) -> None:
+        nonlocal last_completed_stage
+        last_completed_stage = stage
+
+    def finalize(result: dict[str, object], success: bool, exc: BaseException | None = None) -> int:
+        observations.update(_safe_observation_scalars(result))
+        observations["client_certificate_direct_save_readiness_only_result_available"] = True
+        observations["client_certificate_direct_save_readiness_only_success"] = success
+        observations["failed_stage"] = "" if success else current_stage
+        observations["last_completed_stage"] = "client_certificate_direct_save_readiness_only_completed" if success else last_completed_stage
+        observations["exception_type"] = type(exc).__name__ if exc is not None else ""
+        observations["exception_message_class"] = "diagnostic_failure" if exc is not None else ""
+        observations["client_certificate_direct_save_readiness_only_output_called"] = True
+        for key, value in observations.items():
+            if key in {"client_certificate_panel", "device_detail_panel", "panel", "exact_suggestion_element"}:
+                continue
+            safe_value = _safe_public_diagnostic_value(value)
+            if safe_value is not None:
+                _emit(logger, key, safe_value)
+        observations["client_certificate_direct_save_readiness_only_output_completed"] = True
+        _emit(logger, "client_certificate_direct_save_readiness_only_output_completed", True)
+        return 0 if success else 1
+
+    try:
+        advance("client_certificate_direct_save_readiness_only_load_target")
+        config = load_config()
+        targets = ExcelReader(str((config.get("excel", {}) or {}).get("path", ""))).read_targets(include_row_number=True)
+        if len(targets) != 1:
+            raise RuntimeError("対象Excel行が1件ではありません")
+        context = WorkflowContext()
+        context.config = config
+        context.set_target(targets[0])
+        observations["excel_target_count"] = len(targets)
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_resolve_credentials")
+        smsm_config = resolve_smsm_config(config)
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_start_browser")
+        browser = Browser(_base_dir(), config)
+        browser.start()
+        observations["browser_start_called"] = True
+        complete(current_stage)
+        service = ProductionWorkflowService(config=config, logger=logger, browser=browser, smsm_config=smsm_config)
+        advance("client_certificate_direct_save_readiness_only_login")
+        service.smsm_login(context)
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_search_device")
+        service.smsm_open_device_list(context)
+        service.smsm_search_device_by_serial(context, read_only=True)
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_open_certificate")
+        result = service.smsm.inspect_client_certificate_edit_form_only(context.target_serial, keep_panel=True)
+        if result.get("device_result_identity_verified") is not True:
+            raise RuntimeError("対象端末本人確認に失敗しました")
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_click_edit")
+        if result.get("client_certificate_edit_click_count") != 1:
+            raise RuntimeError("編集ボタンのクリック回数が不正です")
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_wait_edit_markers")
+        if result.get("client_certificate_edit_marker_wait_completed") is not True:
+            raise RuntimeError("編集状態マーカーを確認できません")
+        complete(current_stage)
+        panel = result.get("client_certificate_panel")
+        advance("client_certificate_direct_save_readiness_only_inspect_primary_input")
+        primary = service.smsm.inspect_primary_client_certificate_input(panel)
+        result.update(primary)
+        if primary.get("client_certificate_primary_input_resolved") is not True:
+            raise RuntimeError("主inputを一意に解決できません")
+        complete(current_stage)
+        target_imei = normalize_imei(context.target_imei)
+        if len(target_imei) != 15 or not target_imei.isdigit():
+            raise ValueError("IMEI形式が不正です")
+        result.update({"device_imei_target_present": True, "device_imei_target_length_valid": True, "device_imei_target_format_valid": True})
+        advance("client_certificate_direct_save_readiness_only_send_imei")
+        imei_result = service.smsm.send_imei_once_and_inspect_suggestions(panel, target_imei)
+        result.update(imei_result)
+        if imei_result.get("device_imei_send_keys_count") != 1 or imei_result.get("device_imei_send_keys_completed") is not True:
+            raise RuntimeError("IMEI入力に失敗しました")
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_verify_imei")
+        if not all(imei_result.get(key) is True for key in ("device_imei_input_exact_match",)) or any(imei_result.get(key) is True for key in ("device_imei_input_was_truncated", "device_imei_input_was_duplicated", "device_imei_input_was_transformed")):
+            raise RuntimeError("IMEI入力値を検証できません")
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_wait_exact_suggestion")
+        exact_count = imei_result.get("client_certificate_imei_near_input_exact_deduplicated_count", imei_result.get("client_certificate_imei_exact_option_candidate_count", 0))
+        if imei_result.get("client_certificate_imei_suggestion_wait_completed") is not True or exact_count != 1:
+            raise RuntimeError("完全一致候補を1件確認できません")
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_inspect_internal_values")
+        result.update(service.smsm.inspect_direct_save_readiness_without_selection(panel, None, target_imei, imei_result))
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_refetch_save_cancel")
+        if not all(result.get(key) is True for key in (
+            "client_certificate_direct_save_readiness_save_refetched",
+            "client_certificate_direct_save_readiness_save_unique",
+            "client_certificate_direct_save_readiness_save_exact_match",
+            "client_certificate_direct_save_readiness_save_visible",
+            "client_certificate_direct_save_readiness_save_enabled",
+            "client_certificate_direct_save_readiness_cancel_refetched",
+            "client_certificate_direct_save_readiness_cancel_unique",
+            "client_certificate_direct_save_readiness_cancel_exact_match",
+            "client_certificate_direct_save_readiness_cancel_visible",
+            "client_certificate_direct_save_readiness_cancel_enabled",
+        )):
+            raise RuntimeError("保存または取消ボタンを確認できません")
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_verify_readiness")
+        result["client_certificate_direct_save_readiness_candidate_selection_requirement_known"] = False
+        result["client_certificate_direct_save_readiness_requires_candidate_selection"] = False
+        result["client_certificate_direct_save_readiness_resolution_method"] = "candidate_visible_but_save_enabled"
+        result["client_certificate_direct_save_readiness_verified"] = True
+        complete(current_stage)
+        advance("client_certificate_direct_save_readiness_only_completed")
+        return finalize(result, True)
+    except Exception as exc:
+        return finalize(locals().get("result", {}), False, exc)
+    finally:
+        if browser is not None:
+            try:
+                browser.quit()
+            except Exception:
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     if "--verify-smsm-device-detail-only" in args:
@@ -2021,6 +2197,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_smsm_client_certificate_primary_input_only(args)
     if "--inspect-smsm-client-certificate-imei-input-only" in args:
         return _run_smsm_client_certificate_imei_input_only(args)
+    if "--inspect-smsm-client-certificate-imei-direct-save-readiness-only" in args:
+        return _run_smsm_client_certificate_imei_direct_save_readiness_only(args)
     if "--inspect-smsm-client-certificate-imei-option-selection-only" in args:
         return _run_smsm_client_certificate_imei_option_selection_only(args)
     if "--inspect-matched-device-result-links" in args:

@@ -1586,6 +1586,67 @@ def test_primary_input_observation_excludes_hidden_and_disabled_candidates():
     assert result["client_certificate_primary_input_raw_candidate_count"] == 2
     assert result["client_certificate_primary_input_candidate_count"] == 0
     assert result["client_certificate_primary_input_resolved"] is False
+
+
+def test_direct_save_readiness_observes_values_without_selection_or_clicks():
+    handler = handler_for(type("Driver", (), {})())
+    primary = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    hidden = DomNode("input", attrs={"type": "hidden", "value": "internal"})
+    related = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    save = DomNode("button", text="保存")
+    cancel = DomNode("button", text="取消")
+    panel = DomNode("aside", children={
+        "input": [primary, hidden, related],
+        "button,a,[role='button']": [save, cancel],
+    })
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.inspect_direct_save_readiness_without_selection(
+        panel,
+        primary,
+        "123456789012345",
+        {
+            "client_certificate_imei_near_input_exact_deduplicated_count": 1,
+            "client_certificate_imei_near_input_candidate_visible": True,
+            "client_certificate_suggestion_click_count": 0,
+            "client_certificate_option_selection_count": 0,
+            "client_certificate_suggestion_keyboard_selection_count": 0,
+        },
+    )
+
+    assert result["client_certificate_direct_save_readiness_candidate_unselected"] is True
+    assert result["client_certificate_direct_save_readiness_primary_value_exact_match"] is True
+    assert result["client_certificate_direct_save_readiness_hidden_input_count"] == 1
+    assert result["client_certificate_direct_save_readiness_related_input_count"] == 1
+    assert result["client_certificate_direct_save_readiness_internal_value_resolution_method"] == "primary_and_related_value_present"
+    assert result["client_certificate_direct_save_readiness_save_candidate_count"] == 1
+    assert result["client_certificate_direct_save_readiness_save_enabled"] is True
+    assert result["client_certificate_direct_save_readiness_cancel_candidate_count"] == 1
+    assert result["client_certificate_direct_save_readiness_save_click_called"] is False
+    assert result["client_certificate_direct_save_readiness_cancel_click_called"] is False
+
+
+def test_direct_save_readiness_allows_primary_value_only():
+    handler = handler_for(type("Driver", (), {})())
+    primary = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    save = DomNode("button", text="保存")
+    cancel = DomNode("button", text="取消")
+    panel = DomNode("aside", children={
+        "input": [primary],
+        "button,a,[role='button']": [save, cancel],
+    })
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.inspect_direct_save_readiness_without_selection(
+        panel,
+        primary,
+        "123456789012345",
+        {"client_certificate_imei_near_input_exact_deduplicated_count": 1, "client_certificate_imei_near_input_candidate_visible": True},
+    )
+
+    assert result["client_certificate_direct_save_readiness_internal_value_resolution_method"] == "primary_value_only"
     assert result["client_certificate_primary_input_click_called"] is False
 
 
