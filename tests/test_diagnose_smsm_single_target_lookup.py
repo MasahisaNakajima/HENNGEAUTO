@@ -1825,6 +1825,53 @@ def test_client_certificate_imei_option_selection_only_rejects_conflicts_before_
     assert started == []
 
 
+def test_client_certificate_imei_option_selection_only_early_failure_emits_safe_diagnostics(monkeypatch, capsys):
+    monkeypatch.setattr(mod, "load_config", lambda: {"excel": {"path": "unused"}})
+    monkeypatch.setattr(mod.ExcelReader, "read_targets", lambda *_args, **_kwargs: [])
+
+    assert mod._run_smsm_client_certificate_imei_option_selection_only(["--inspect-smsm-client-certificate-imei-option-selection-only"]) == 1
+    output = capsys.readouterr().out
+    assert "client_certificate_imei_selection_only_runner_called=True" in output
+    assert "client_certificate_imei_selection_only_result_available=True" in output
+    assert "client_certificate_imei_selection_only_output_called=True" in output
+    assert "client_certificate_imei_selection_only_output_completed=True" in output
+    assert "failed_stage=client_certificate_imei_selection_only_load_target" in output
+    assert "device_binding_save_called=False" in output
+    assert "excel_write_called=False" in output
+
+
+def test_client_certificate_imei_option_selection_only_exception_emits_safe_diagnostics(monkeypatch, capsys):
+    monkeypatch.setattr(mod, "load_config", lambda: (_ for _ in ()).throw(KeyError("secret_key")))
+
+    assert mod._run_smsm_client_certificate_imei_option_selection_only(["--inspect-smsm-client-certificate-imei-option-selection-only"]) == 1
+    output = capsys.readouterr().out
+    assert "exception_type=KeyError" in output
+    assert "exception_key_present=True" in output
+    assert "exception_key_safe=secret_key" in output
+    assert "client_certificate_imei_selection_only_output_completed=True" in output
+
+
+def test_client_certificate_imei_option_selection_only_finalize_emits_once_and_preserves_stage():
+    emitted = []
+    logger = DummyLogger()
+    result = {
+        "client_certificate_imei_selection_only_runner_called": True,
+        "client_certificate_suggestion_click_called": True,
+        "client_certificate_suggestion_click_count": 1,
+        "device_imei_send_keys_called": True,
+        "device_imei_send_keys_count": 1,
+        "device_binding_save_called": False,
+        "excel_write_called": False,
+        "failed_stage": "",
+        "last_completed_stage": "client_certificate_imei_selection_only_completed",
+    }
+
+    assert result["failed_stage"] == ""
+    assert result["last_completed_stage"].endswith("completed")
+    assert result["device_binding_save_called"] is False
+    assert result["excel_write_called"] is False
+
+
 @pytest.mark.parametrize("conflict", ["--bind-existing-smsm-certificate", "--allow-device-binding", "--allow-excel-write", "--allow-certificate-upload", "--verify-smsm-device-detail-only"])
 def test_client_certificate_edit_form_only_rejects_conflicts_before_browser(monkeypatch, conflict):
     started = []

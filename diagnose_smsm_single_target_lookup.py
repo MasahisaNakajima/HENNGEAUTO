@@ -2579,12 +2579,22 @@ def _run_smsm_client_certificate_imei_input_only(args: list[str]) -> int:
 def _run_smsm_client_certificate_imei_option_selection_only(args: list[str]) -> int:
     logger = AppLogger(_base_dir(), unique_log=True)
     browser = None
+    current_stage = "client_certificate_imei_selection_only_cli_validation"
+    last_completed_stage = ""
     operations = {
+        "browser_start_called": False,
+        "client_certificate_imei_selection_only_runner_called": True,
+        "client_certificate_imei_selection_only_result_available": False,
+        "client_certificate_imei_selection_only_output_called": False,
+        "client_certificate_imei_selection_only_output_completed": False,
+        "client_certificate_imei_selection_only_success": False,
         "client_certificate_primary_input_click_called": False,
         "client_certificate_primary_input_focus_called": False,
         "client_certificate_primary_input_expand_click_called": False,
         "device_imei_send_keys_called": False,
         "device_imei_send_keys_count": 0,
+        "client_certificate_suggestion_click_called": False,
+        "client_certificate_suggestion_click_count": 0,
         "client_certificate_suggestion_keyboard_selection_called": False,
         "client_certificate_suggestion_keyboard_selection_count": 0,
         "device_binding_save_called": False,
@@ -2592,49 +2602,101 @@ def _run_smsm_client_certificate_imei_option_selection_only(args: list[str]) -> 
         "client_certificate_cancel_click_called": False,
         "excel_write_called": False,
         "certificate_upload_called": False,
+        "failed_stage": "",
+        "last_completed_stage": "",
+        "exception_type": "",
+        "exception_message_class": "",
     }
     forbidden = {"--inspect-smsm-client-certificate-edit-form-only", "--inspect-smsm-client-certificate-primary-input-only", "--inspect-smsm-client-certificate-imei-input-only", "--allow-device-binding", "--allow-excel-write", "--allow-certificate-upload", "--run-single-certificate-workflow"}
+
+    def finalize(result: dict[str, object], code: int) -> int:
+        result = dict(result)
+        result.pop("client_certificate_panel", None)
+        result.pop("panel", None)
+        result.pop("device_detail_panel", None)
+        result.pop("edit_form", None)
+        result.setdefault("failed_stage", current_stage if code == 1 else "")
+        result.setdefault("last_completed_stage", last_completed_stage)
+        result.setdefault("exception_type", "")
+        result.setdefault("exception_message_class", "")
+        result["client_certificate_imei_selection_only_result_available"] = True
+        result["client_certificate_imei_selection_only_output_called"] = True
+        result["client_certificate_imei_selection_only_success"] = code == 0
+        result["client_certificate_imei_selection_only_output_completed"] = True
+        try:
+            for key, value in result.items():
+                safe = _safe_public_diagnostic_value(value)
+                if safe is not None:
+                    _emit(logger, key, safe)
+                    print(f"{key}={safe}")
+        except Exception as output_error:
+            print("client_certificate_imei_selection_only_output_completed=False", file=sys.stderr)
+            print(f"exception_type={type(output_error).__name__}", file=sys.stderr)
+        return code
+
     if args != ["--inspect-smsm-client-certificate-imei-option-selection-only"] or any(flag in forbidden for flag in args):
-        return 2
+        operations["failed_stage"] = "cli_flag_validation"
+        return finalize(operations, 2)
+    result = dict(operations)
     try:
+        current_stage = "client_certificate_imei_selection_only_load_target"
         config = load_config()
         targets = ExcelReader(str((config.get("excel", {}) or {}).get("path", ""))).read_targets(include_row_number=True)
         if not targets:
-            return 1
+            result["failed_stage"] = current_stage
+            return finalize(result, 1)
         context = WorkflowContext(); context.config = config; context.set_target(targets[0])
+        last_completed_stage = current_stage
+        current_stage = "client_certificate_imei_selection_only_resolve_credentials"
         imei = normalize_imei(context.target_imei)
-        browser = Browser(_base_dir(), config); browser.start()
+        last_completed_stage = current_stage
+        current_stage = "client_certificate_imei_selection_only_start_browser"
+        browser = Browser(_base_dir(), config); browser.start(); result["browser_start_called"] = True; last_completed_stage = current_stage
         service = ProductionWorkflowService(config=config, logger=logger, browser=browser, smsm_config=resolve_smsm_config(config))
-        service.smsm_login(context); service.smsm_open_device_list(context); service.smsm_search_device_by_serial(context, read_only=True)
-        result = service.smsm.inspect_client_certificate_edit_form_only(context.target_serial, keep_panel=True)
-        panel = result.get("client_certificate_panel")
-        primary = service.smsm.inspect_primary_client_certificate_input(panel)
-        result.update(primary)
+        current_stage = "client_certificate_imei_selection_only_login"; service.smsm_login(context); last_completed_stage = current_stage
+        current_stage = "client_certificate_imei_selection_only_open_device_list"; service.smsm_open_device_list(context); last_completed_stage = current_stage
+        current_stage = "client_certificate_imei_selection_only_search_device"; service.smsm_search_device_by_serial(context, read_only=True); last_completed_stage = current_stage
+        current_stage = "client_certificate_imei_selection_only_wait_edit_markers"
+        observed = service.smsm.inspect_client_certificate_edit_form_only(context.target_serial, keep_panel=True)
+        result.update(observed)
+        panel = observed.get("client_certificate_panel")
+        current_stage = "client_certificate_imei_selection_only_inspect_primary_input"
+        result.update(service.smsm.inspect_primary_client_certificate_input(panel))
         if not (result.get("device_result_identity_verified") is True and result.get("client_certificate_edit_transition_detected") is True and result.get("client_certificate_primary_input_resolved") is True and panel is not None):
-            return 1
+            result["failed_stage"] = current_stage
+            return finalize(result, 1)
+        current_stage = "client_certificate_imei_selection_only_send_imei"
         result.update(service.smsm.send_imei_once_and_inspect_suggestions(panel, imei))
-        if not (result.get("device_imei_input_exact_match") is True and result.get("client_certificate_imei_exact_option_unique") is True or result.get("client_certificate_imei_near_input_candidate_unique") is True):
-            return 1
-        input_candidates = service.smsm._safe_find_elements_from(panel, "css selector", "input,textarea,[role='combobox'],[contenteditable='true']")
-        if len(input_candidates) != 1:
-            return 1
-        result.update(service.smsm.click_exact_imei_suggestion_once_and_verify(panel, input_candidates[0], imei))
-        result.update(operations)
-        success = bool(result.get("client_certificate_suggestion_click_completed") is True and result.get("client_certificate_selection_state_detected") is True and result.get("client_certificate_option_selection_count") == 1 and result.get("device_binding_save_called") is False and result.get("excel_write_called") is False)
-        result.pop("client_certificate_panel", None)
-        result["failed_stage"] = "" if success else "client_certificate_imei_selection_only_wait_selection_state"
-        result["last_completed_stage"] = "client_certificate_imei_selection_only_completed" if success else "client_certificate_imei_selection_only_click_exact_suggestion"
-        for key, value in result.items():
-            if key not in {"panel", "device_detail_panel", "client_certificate_panel", "edit_form"}:
-                safe = _safe_public_diagnostic_value(value)
-                if safe is not None: print(f"{key}={safe}")
-        return 0 if success else 1
+        current_stage = "client_certificate_imei_selection_only_refetch_exact_suggestion"
+        if not (result.get("device_imei_input_exact_match") is True and (result.get("client_certificate_imei_exact_option_unique") is True or result.get("client_certificate_imei_near_input_candidate_unique") is True)):
+            result["failed_stage"] = current_stage
+            return finalize(result, 1)
+        inputs = service.smsm._safe_find_elements_from(panel, "css selector", "input,textarea,[role='combobox'],[contenteditable='true']")
+        if len(inputs) != 1:
+            result["failed_stage"] = current_stage
+            return finalize(result, 1)
+        current_stage = "client_certificate_imei_selection_only_click_exact_suggestion"
+        result.update(service.smsm.click_exact_imei_suggestion_once_and_verify(panel, inputs[0], imei))
+        result["last_completed_stage"] = current_stage
+        current_stage = "client_certificate_imei_selection_only_wait_selection_state"
+        success = result.get("client_certificate_suggestion_click_completed") is True and result.get("client_certificate_selection_state_detected") is True and result.get("client_certificate_option_selection_count") == 1 and result.get("device_binding_save_called") is False and result.get("excel_write_called") is False
+        result["failed_stage"] = "" if success else current_stage
+        result["last_completed_stage"] = "client_certificate_imei_selection_only_completed" if success else last_completed_stage
+        return finalize(result, 0 if success else 1)
     except Exception as exc:
-        print(f"failed_stage=client_certificate_imei_selection_only"); print(f"exception_type={type(exc).__name__}"); return 1
+        result.update(_name_error_diagnostics(exc, _base_dir()))
+        result.update(_key_error_diagnostics(exc))
+        result["failed_stage"] = current_stage
+        result["last_completed_stage"] = last_completed_stage
+        result["exception_type"] = type(exc).__name__
+        result["exception_message_class"] = _classify_edit_form_exception(exc, current_stage)
+        return finalize(result, 1)
     finally:
         if browser is not None:
-            try: browser.quit()
-            except Exception: pass
+            try:
+                browser.quit()
+            except Exception:
+                pass
 
 
 def _safe_observation_scalars(observation) -> dict[str, object]:
