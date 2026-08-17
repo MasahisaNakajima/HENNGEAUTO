@@ -1028,6 +1028,11 @@ class SmsmHandler:
             "client_certificate_after_save_count": 0,
             "client_certificate_after_cancel_count": 0,
             "client_certificate_after_control_element_count": 0,
+            "client_certificate_after_snapshot_created": False,
+            "client_certificate_after_snapshot_source": "unresolved",
+            "client_certificate_after_snapshot_uses_current_classification": False,
+            "client_certificate_after_snapshot_uses_before_fallback": False,
+            "client_certificate_after_snapshot_metrics_consistent": False,
             "client_certificate_edit_transition_detected": False,
             "client_certificate_unconfigured_disappeared": False,
             "client_certificate_edit_disappeared": False,
@@ -1160,7 +1165,8 @@ class SmsmHandler:
                 "client_certificate_edit_form_contains_search_input": bool(self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input[name*='query' i],input[aria-label*='search' i]")),
                 "client_certificate_edit_form_contains_result_table": bool(self._safe_find_elements_from(panel, By.CSS_SELECTOR, "table")),
             })
-            result.update(self._certificate_state_counts(refreshed))
+            after_snapshot = self._certificate_after_snapshot(refreshed, panel)
+            result.update(after_snapshot)
             result["client_certificate_edit_transition_detected"] = self._certificate_edit_transition_detected(result)
             result["client_certificate_unconfigured_disappeared"] = result.get("client_certificate_after_unconfigured_count") == 0
             result["client_certificate_edit_disappeared"] = result.get("client_certificate_after_edit_count") == 0
@@ -1209,6 +1215,38 @@ class SmsmHandler:
             and result.get("client_certificate_after_cancel_count") == 1
             and result.get("client_certificate_after_control_element_count", 0) >= 1
         )
+
+    def _certificate_after_snapshot(self, current_classification: dict[str, object], panel) -> dict[str, object]:
+        classification = current_classification or {}
+        current_panel_classification = self._classify_client_certificate_panel(panel) if panel is not None else {}
+        unconfigured_count = int(current_panel_classification.get("client_certificate_unconfigured_text_candidate_count", 0) or 0)
+        edit_count = int(classification.get("client_certificate_edit_form_edit_candidate_count", 0) or 0)
+        save_count = int(classification.get("client_certificate_edit_form_save_candidate_count", 0) or 0)
+        cancel_count = int(classification.get("client_certificate_edit_form_cancel_candidate_count", 0) or 0)
+        control_count = int(classification.get("client_certificate_edit_form_control_candidate_count", 0) or 0)
+        return {
+            "client_certificate_after_unconfigured_count": unconfigured_count,
+            "client_certificate_after_edit_count": edit_count,
+            "client_certificate_after_save_count": save_count,
+            "client_certificate_after_cancel_count": cancel_count,
+            "client_certificate_after_control_element_count": control_count,
+            "client_certificate_after_snapshot_created": bool(panel is not None),
+            "client_certificate_after_snapshot_source": (
+                "reacquired_panel_classification" if classification.get("client_certificate_panel_reacquired_after_edit") is True
+                else "current_same_panel_rescan" if panel is not None
+                else "unresolved"
+            ),
+            "client_certificate_after_snapshot_uses_current_classification": bool(panel is not None),
+            "client_certificate_after_snapshot_uses_before_fallback": False,
+            "client_certificate_after_snapshot_metrics_consistent": bool(
+                panel is not None
+                and unconfigured_count >= 0
+                and edit_count >= 0
+                and save_count >= 0
+                and cancel_count >= 0
+                and control_count >= 0
+            ),
+        }
 
     @staticmethod
     def _certificate_state_counts(state: dict[str, object]) -> dict[str, object]:

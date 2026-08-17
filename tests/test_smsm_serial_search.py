@@ -1522,6 +1522,34 @@ def test_certificate_edit_transition_rejects_remaining_reference_markers():
     assert handler._certificate_edit_transition_detected(result) is False
 
 
+def test_certificate_after_snapshot_uses_current_edit_classification_not_before_counts():
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside", text="クライアント証明書 保存 取消")
+    handler._classify_client_certificate_panel = lambda _panel: {
+        "client_certificate_unconfigured_text_candidate_count": 0,
+    }
+    current = {
+        "client_certificate_edit_form_edit_candidate_count": 0,
+        "client_certificate_edit_form_save_candidate_count": 1,
+        "client_certificate_edit_form_cancel_candidate_count": 1,
+        "client_certificate_edit_form_control_candidate_count": 2,
+        "client_certificate_panel_reacquired_after_edit": False,
+    }
+
+    snapshot = handler._certificate_after_snapshot(current, panel)
+
+    assert snapshot["client_certificate_after_unconfigured_count"] == 0
+    assert snapshot["client_certificate_after_edit_count"] == 0
+    assert snapshot["client_certificate_after_save_count"] == 1
+    assert snapshot["client_certificate_after_cancel_count"] == 1
+    assert snapshot["client_certificate_after_control_element_count"] == 2
+    assert snapshot["client_certificate_after_snapshot_created"] is True
+    assert snapshot["client_certificate_after_snapshot_source"] == "current_same_panel_rescan"
+    assert snapshot["client_certificate_after_snapshot_uses_current_classification"] is True
+    assert snapshot["client_certificate_after_snapshot_uses_before_fallback"] is False
+    assert snapshot["client_certificate_after_snapshot_metrics_consistent"] is True
+
+
 def test_client_certificate_input_and_expand_button_are_one_logical_control():
     handler = handler_for(type("Driver", (), {})())
     panel = DomNode("aside", text="クライアント証明書（デフォルト） 保存 取消")
