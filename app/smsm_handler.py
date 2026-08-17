@@ -1216,6 +1216,8 @@ class SmsmHandler:
         probe = self._dom_visibility_probe(panel)
         dom_visible = bool(probe.get("visible"))
         return {
+            "dom_visible": dom_visible,
+            "selenium_displayed": selenium_displayed,
             "client_certificate_edit_form_selenium_displayed": selenium_displayed,
             "client_certificate_edit_form_dom_visible": dom_visible,
             "client_certificate_edit_form_visibility_verified": dom_visible,
@@ -1269,13 +1271,13 @@ class SmsmHandler:
 
     def _dom_visibility_probe(self, element) -> dict[str, object]:
         if element is None:
-            return {"visible": False, "result_type": "none", "valid": False, "script_called": False}
+            return {"visible": False, "result_type": "none", "valid": False, "script_called": False, "has_rect_key": False, "has_visible_key": False}
         if str(self._safe_attribute(element, "aria-hidden") or "").casefold() == "true" or self._safe_attribute(element, "hidden") is not None:
-            return {"visible": False, "result_type": "filtered", "valid": True, "script_called": False}
+            return {"visible": False, "result_type": "filtered", "valid": True, "script_called": False, "has_rect_key": False, "has_visible_key": False}
         try:
             state = self.browser.driver.execute_script("const e=arguments[0],s=getComputedStyle(e),r=e.getBoundingClientRect(); return {display:s.display,visibility:s.visibility,width:r.width,height:r.height,rects:e.getClientRects().length};", element)
         except Exception:
-            return {"visible": False, "result_type": "exception", "valid": False, "script_called": True}
+            return {"visible": False, "result_type": "exception", "valid": False, "script_called": True, "has_rect_key": False, "has_visible_key": False}
         valid = isinstance(state, dict) and all(key in state for key in ("display", "visibility", "width", "height", "rects"))
         return {"visible": bool(valid and state.get("display") != "none" and state.get("visibility") != "hidden" and state.get("width", 0) > 0 and state.get("height", 0) > 0 and state.get("rects", 0) > 0), "result_type": type(state).__name__, "valid": valid, "script_called": True, "has_rect_key": isinstance(state, dict) and "width" in state and "height" in state, "has_visible_key": isinstance(state, dict) and "display" in state and "visibility" in state}
 

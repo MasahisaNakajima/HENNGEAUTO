@@ -2180,6 +2180,14 @@ def _name_error_diagnostics(exc: BaseException, project_root: Path) -> dict[str,
     }
 
 
+def _key_error_diagnostics(exc: BaseException) -> dict[str, object]:
+    if not isinstance(exc, KeyError):
+        return {"exception_key_present": False, "exception_key_safe": "", "exception_key_class": ""}
+    key = exc.args[0] if exc.args else None
+    safe = key if isinstance(key, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) else ""
+    return {"exception_key_present": key is not None, "exception_key_safe": safe, "exception_key_class": "KeyError"}
+
+
 def _run_smsm_client_certificate_edit_form_only(args: list[str]) -> int:
     """Inspect the certificate edit form without selecting or saving."""
     logger = AppLogger(_base_dir(), unique_log=True)
@@ -2324,6 +2332,7 @@ def _run_smsm_client_certificate_edit_form_only(args: list[str]) -> int:
             "exception_failed_phase": str(getattr(exc, "failed_phase", "") or ""),
         })
         result.update(_name_error_diagnostics(exc, _base_dir()))
+        result.update(_key_error_diagnostics(exc))
         try:
             logger.exception(f"edit_form_failure stage={current_stage} failed_phase={getattr(exc, 'failed_phase', '') or 'none'} observation_keys={len(result)}")
         except Exception:

@@ -1582,6 +1582,19 @@ def test_edit_form_visibility_metrics_are_consistent_for_current_panel():
     assert metrics["client_certificate_edit_form_visibility_script_result_valid"] is True
 
 
+@pytest.mark.parametrize("script_result", [None, True, {}, {"display": "block"}])
+def test_edit_form_visibility_probe_schema_never_raises_key_error(monkeypatch, script_result):
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside", displayed=True)
+    handler.browser.driver.execute_script = lambda *_args: script_result
+
+    metrics = handler._edit_form_visibility_metrics(panel)
+
+    assert "dom_visible" in metrics
+    assert "client_certificate_edit_form_visibility_script_result_valid" in metrics
+    assert metrics["dom_visible"] is False
+
+
 @pytest.mark.parametrize("expected_state", ["view", "edit"])
 def test_client_certificate_state_wait_uses_current_snapshot_without_name_error(monkeypatch, expected_state):
     handler = handler_for(type("Driver", (), {})())
