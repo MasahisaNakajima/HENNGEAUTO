@@ -1561,6 +1561,75 @@ class SmsmHandler:
         except Exception:
             return defaults
 
+    def click_exact_imei_suggestion_once_and_verify(self, panel, input_element, imei: str, trace=None) -> dict[str, object]:
+        result = {
+            "client_certificate_suggestion_click_called": False,
+            "client_certificate_suggestion_click_count": 0,
+            "client_certificate_suggestion_click_started": False,
+            "client_certificate_suggestion_click_completed": False,
+            "client_certificate_suggestion_click_retry_count": 0,
+            "client_certificate_suggestion_click_exception_type": "",
+            "client_certificate_suggestion_click_target_refetched": False,
+            "client_certificate_suggestion_click_target_exact_match": False,
+            "client_certificate_suggestion_click_target_unique": False,
+            "client_certificate_suggestion_click_target_visible": False,
+            "client_certificate_suggestion_click_target_enabled": False,
+            "client_certificate_option_selection_called": False,
+            "client_certificate_option_selection_count": 0,
+            "client_certificate_option_selection_method": "",
+            "client_certificate_suggestion_keyboard_selection_called": False,
+            "client_certificate_suggestion_keyboard_selection_count": 0,
+            "client_certificate_selection_state_wait_called": False,
+            "client_certificate_selection_state_wait_completed": False,
+            "client_certificate_selection_state_wait_iteration_count": 0,
+            "client_certificate_selection_state_wait_timeout": False,
+            "client_certificate_suggestion_disappeared_after_selection": False,
+            "client_certificate_exact_suggestion_visible_after_selection": False,
+            "client_certificate_input_value_present_after_selection": False,
+            "client_certificate_input_value_exact_match_after_selection": False,
+            "client_certificate_input_value_length_match_after_selection": False,
+            "client_certificate_input_value_was_cleared_after_selection": False,
+            "client_certificate_input_value_was_duplicated_after_selection": False,
+            "client_certificate_input_value_was_transformed_after_selection": False,
+            "client_certificate_selection_state_detected": False,
+            "client_certificate_selection_state_resolution_method": "unresolved",
+        }
+        refreshed = self._near_input_suggestion_snapshot(panel, input_element, imei)
+        result["client_certificate_suggestion_click_target_refetched"] = True
+        result["client_certificate_suggestion_click_target_unique"] = refreshed.get("client_certificate_imei_near_input_candidate_unique") is True
+        result["client_certificate_suggestion_click_target_exact_match"] = refreshed.get("client_certificate_imei_near_input_exact_match_count") == 1 or refreshed.get("client_certificate_imei_near_input_exact_deduplicated_count") == 1 or refreshed.get("client_certificate_imei_near_input_candidate_count") == 1
+        result["client_certificate_suggestion_click_target_visible"] = refreshed.get("client_certificate_imei_near_input_candidate_visible") is True
+        result["client_certificate_suggestion_click_target_enabled"] = self._safe_bool(input_element, "is_enabled")
+        if not all((result["client_certificate_suggestion_click_target_unique"], result["client_certificate_suggestion_click_target_exact_match"], result["client_certificate_suggestion_click_target_visible"], result["client_certificate_suggestion_click_target_enabled"])):
+            return result
+        candidates = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "[role='option'],[role='listitem'],div,button,span,li,[tabindex]")
+        target = next((item for item in candidates if self._safe_element_text_for_diagnostic(item).strip() == imei and item is not input_element), None)
+        if target is None:
+            return result
+        result["client_certificate_suggestion_click_started"] = True
+        try:
+            target.click()
+        except Exception as exc:
+            result["client_certificate_suggestion_click_exception_type"] = type(exc).__name__
+            return result
+        result.update({"client_certificate_suggestion_click_called": True, "client_certificate_suggestion_click_count": 1, "client_certificate_suggestion_click_completed": True, "client_certificate_option_selection_called": True, "client_certificate_option_selection_count": 1, "client_certificate_option_selection_method": "exact_suggestion_normal_click"})
+        iterations = 0
+        def selected(_driver):
+            nonlocal iterations
+            iterations += 1
+            current = self._near_input_suggestion_snapshot(panel, input_element, imei)
+            current_value = self._input_value(input_element)
+            disappeared = current.get("client_certificate_imei_near_input_candidate_count", 0) == 0
+            result.update({"client_certificate_suggestion_disappeared_after_selection": disappeared, "client_certificate_exact_suggestion_visible_after_selection": not disappeared, "client_certificate_input_value_present_after_selection": bool(current_value), "client_certificate_input_value_exact_match_after_selection": current_value == imei, "client_certificate_input_value_length_match_after_selection": len(current_value) == len(imei), "client_certificate_input_value_was_cleared_after_selection": not bool(current_value), "client_certificate_input_value_was_duplicated_after_selection": len(current_value) > len(imei), "client_certificate_input_value_was_transformed_after_selection": bool(current_value) and current_value != imei, "client_certificate_selection_state_detected": disappeared and current_value == imei, "client_certificate_selection_state_resolution_method": "input_value_and_candidate_disappearance" if disappeared and current_value == imei else "unresolved"})
+            return result["client_certificate_selection_state_detected"]
+        try:
+            WebDriverWait(self.browser.driver, 10, poll_frequency=0.25).until(selected)
+            completed = True
+        except TimeoutException:
+            completed = False
+        result.update({"client_certificate_selection_state_wait_called": True, "client_certificate_selection_state_wait_completed": completed, "client_certificate_selection_state_wait_iteration_count": iterations, "client_certificate_selection_state_wait_timeout": not completed})
+        return result
+
     @staticmethod
     def _certificate_edit_transition_detected(result: dict[str, object]) -> bool:
         return bool(

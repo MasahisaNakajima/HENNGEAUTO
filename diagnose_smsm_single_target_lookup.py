@@ -2021,6 +2021,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_smsm_client_certificate_primary_input_only(args)
     if "--inspect-smsm-client-certificate-imei-input-only" in args:
         return _run_smsm_client_certificate_imei_input_only(args)
+    if "--inspect-smsm-client-certificate-imei-option-selection-only" in args:
+        return _run_smsm_client_certificate_imei_option_selection_only(args)
     if "--inspect-matched-device-result-links" in args:
         return _run_matched_device_result_link_inspection(args)
     if "--smsm-login-only" in args:
@@ -2574,6 +2576,67 @@ def _run_smsm_client_certificate_imei_input_only(args: list[str]) -> int:
                 pass
 
 
+def _run_smsm_client_certificate_imei_option_selection_only(args: list[str]) -> int:
+    logger = AppLogger(_base_dir(), unique_log=True)
+    browser = None
+    operations = {
+        "client_certificate_primary_input_click_called": False,
+        "client_certificate_primary_input_focus_called": False,
+        "client_certificate_primary_input_expand_click_called": False,
+        "device_imei_send_keys_called": False,
+        "device_imei_send_keys_count": 0,
+        "client_certificate_suggestion_keyboard_selection_called": False,
+        "client_certificate_suggestion_keyboard_selection_count": 0,
+        "device_binding_save_called": False,
+        "device_binding_save_count": 0,
+        "client_certificate_cancel_click_called": False,
+        "excel_write_called": False,
+        "certificate_upload_called": False,
+    }
+    forbidden = {"--inspect-smsm-client-certificate-edit-form-only", "--inspect-smsm-client-certificate-primary-input-only", "--inspect-smsm-client-certificate-imei-input-only", "--allow-device-binding", "--allow-excel-write", "--allow-certificate-upload", "--run-single-certificate-workflow"}
+    if args != ["--inspect-smsm-client-certificate-imei-option-selection-only"] or any(flag in forbidden for flag in args):
+        return 2
+    try:
+        config = load_config()
+        targets = ExcelReader(str((config.get("excel", {}) or {}).get("path", ""))).read_targets(include_row_number=True)
+        if not targets:
+            return 1
+        context = WorkflowContext(); context.config = config; context.set_target(targets[0])
+        imei = normalize_imei(context.target_imei)
+        browser = Browser(_base_dir(), config); browser.start()
+        service = ProductionWorkflowService(config=config, logger=logger, browser=browser, smsm_config=resolve_smsm_config(config))
+        service.smsm_login(context); service.smsm_open_device_list(context); service.smsm_search_device_by_serial(context, read_only=True)
+        result = service.smsm.inspect_client_certificate_edit_form_only(context.target_serial, keep_panel=True)
+        panel = result.get("client_certificate_panel")
+        primary = service.smsm.inspect_primary_client_certificate_input(panel)
+        result.update(primary)
+        if not (result.get("device_result_identity_verified") is True and result.get("client_certificate_edit_transition_detected") is True and result.get("client_certificate_primary_input_resolved") is True and panel is not None):
+            return 1
+        result.update(service.smsm.send_imei_once_and_inspect_suggestions(panel, imei))
+        if not (result.get("device_imei_input_exact_match") is True and result.get("client_certificate_imei_exact_option_unique") is True or result.get("client_certificate_imei_near_input_candidate_unique") is True):
+            return 1
+        input_candidates = service.smsm._safe_find_elements_from(panel, "css selector", "input,textarea,[role='combobox'],[contenteditable='true']")
+        if len(input_candidates) != 1:
+            return 1
+        result.update(service.smsm.click_exact_imei_suggestion_once_and_verify(panel, input_candidates[0], imei))
+        result.update(operations)
+        success = bool(result.get("client_certificate_suggestion_click_completed") is True and result.get("client_certificate_selection_state_detected") is True and result.get("client_certificate_option_selection_count") == 1 and result.get("device_binding_save_called") is False and result.get("excel_write_called") is False)
+        result.pop("client_certificate_panel", None)
+        result["failed_stage"] = "" if success else "client_certificate_imei_selection_only_wait_selection_state"
+        result["last_completed_stage"] = "client_certificate_imei_selection_only_completed" if success else "client_certificate_imei_selection_only_click_exact_suggestion"
+        for key, value in result.items():
+            if key not in {"panel", "device_detail_panel", "client_certificate_panel", "edit_form"}:
+                safe = _safe_public_diagnostic_value(value)
+                if safe is not None: print(f"{key}={safe}")
+        return 0 if success else 1
+    except Exception as exc:
+        print(f"failed_stage=client_certificate_imei_selection_only"); print(f"exception_type={type(exc).__name__}"); return 1
+    finally:
+        if browser is not None:
+            try: browser.quit()
+            except Exception: pass
+
+
 def _safe_observation_scalars(observation) -> dict[str, object]:
     if not isinstance(observation, dict):
         return {}
@@ -2960,6 +3023,7 @@ def _workflow_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inspect-smsm-client-certificate-edit-form-only", action="store_true")
     parser.add_argument("--inspect-smsm-client-certificate-primary-input-only", action="store_true")
     parser.add_argument("--inspect-smsm-client-certificate-imei-input-only", action="store_true")
+    parser.add_argument("--inspect-smsm-client-certificate-imei-option-selection-only", action="store_true")
     return parser
 
 

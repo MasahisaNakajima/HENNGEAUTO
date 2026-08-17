@@ -1802,6 +1802,29 @@ def test_client_certificate_imei_input_only_rejects_conflicts_before_browser(mon
     assert started == []
 
 
+def test_client_certificate_imei_option_selection_only_option_selects_dedicated_route(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mod, "_run_smsm_client_certificate_imei_option_selection_only", lambda args: calls.append(args) or 0)
+    assert mod.main(["--inspect-smsm-client-certificate-imei-option-selection-only"]) == 0
+    assert calls == [["--inspect-smsm-client-certificate-imei-option-selection-only"]]
+
+
+@pytest.mark.parametrize("conflict", [
+    "--inspect-smsm-client-certificate-edit-form-only",
+    "--inspect-smsm-client-certificate-primary-input-only",
+    "--inspect-smsm-client-certificate-imei-input-only",
+    "--allow-device-binding",
+    "--allow-excel-write",
+    "--allow-certificate-upload",
+    "--run-single-certificate-workflow",
+])
+def test_client_certificate_imei_option_selection_only_rejects_conflicts_before_browser(monkeypatch, conflict):
+    started = []
+    monkeypatch.setattr(mod, "Browser", lambda *_args, **_kwargs: started.append(True))
+    assert mod.main(["--inspect-smsm-client-certificate-imei-option-selection-only", conflict]) == 2
+    assert started == []
+
+
 @pytest.mark.parametrize("conflict", ["--bind-existing-smsm-certificate", "--allow-device-binding", "--allow-excel-write", "--allow-certificate-upload", "--verify-smsm-device-detail-only"])
 def test_client_certificate_edit_form_only_rejects_conflicts_before_browser(monkeypatch, conflict):
     started = []

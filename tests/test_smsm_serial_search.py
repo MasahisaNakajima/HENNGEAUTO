@@ -1713,6 +1713,53 @@ def test_imei_suggestion_near_input_partial_match_is_not_accepted(monkeypatch):
     assert result["client_certificate_imei_suggestion_wait_completed"] is False
 
 
+def test_exact_suggestion_is_refetched_and_clicked_once_then_selection_state_is_verified(monkeypatch):
+    handler = handler_for(type("Driver", (), {})())
+    input_node = DomNode("input", attrs={"type": "text", "tabindex": "0", "value": "123456789012345"})
+    option = DomNode("div", text="123456789012345")
+    option.click_calls = 0
+    option.click = lambda: setattr(option, "click_calls", option.click_calls + 1)
+    panel = DomNode("aside")
+    classifications = iter([
+        {"candidate": 1, "unique": True, "visible_candidate": True, "exact": 1, "dedup_exact": 1},
+        {"candidate": 0, "unique": False, "visible_candidate": False, "exact": 0, "dedup_exact": 0},
+    ])
+    handler._near_input_suggestion_snapshot = lambda *_args: {
+        "client_certificate_imei_near_input_candidate_unique": True,
+        "client_certificate_imei_near_input_candidate_visible": True,
+        "client_certificate_imei_near_input_exact_match_count": 1,
+        "client_certificate_imei_near_input_exact_deduplicated_count": 1,
+        "client_certificate_imei_near_input_candidate_count": 1,
+    } if next(classifications)["candidate"] else {
+        "client_certificate_imei_near_input_candidate_unique": False,
+        "client_certificate_imei_near_input_candidate_visible": False,
+        "client_certificate_imei_near_input_exact_match_count": 0,
+        "client_certificate_imei_near_input_exact_deduplicated_count": 0,
+        "client_certificate_imei_near_input_candidate_count": 0,
+    }
+    handler._safe_find_elements_from = lambda _element, _by, selector: [option]
+    handler._safe_element_text_for_diagnostic = lambda element: element.text
+    handler._input_value = staticmethod(lambda element: element.get_attribute("value") or "123456789012345")
+
+    class ImmediateWait:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def until(self, predicate):
+            assert predicate(None) is True
+            return True
+
+    monkeypatch.setattr(smsm_handler_module, "WebDriverWait", ImmediateWait)
+    result = handler.click_exact_imei_suggestion_once_and_verify(panel, input_node, "123456789012345")
+
+    assert option.click_calls == 1
+    assert result["client_certificate_suggestion_click_count"] == 1
+    assert result["client_certificate_option_selection_method"] == "exact_suggestion_normal_click"
+    assert result["client_certificate_suggestion_keyboard_selection_called"] is False
+    assert result["client_certificate_selection_state_detected"] is True
+    assert result["client_certificate_selection_state_resolution_method"] == "input_value_and_candidate_disappearance"
+
+
 def test_edit_marker_wait_succeeds_without_strict_form_wait(monkeypatch):
     handler = handler_for(type("Driver", (), {})())
     panel = DomNode("aside")
