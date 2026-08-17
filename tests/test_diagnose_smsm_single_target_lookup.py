@@ -1794,6 +1794,46 @@ def test_client_certificate_direct_save_readiness_only_option_selects_dedicated_
     assert calls == [["--inspect-smsm-client-certificate-imei-direct-save-readiness-only"]]
 
 
+def test_client_certificate_direct_save_only_option_selects_dedicated_route(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mod, "_run_smsm_client_certificate_imei_direct_save_only", lambda args: calls.append(args) or 0)
+
+    assert mod.main(["--execute-smsm-client-certificate-imei-direct-save-only"]) == 0
+    assert calls == [["--execute-smsm-client-certificate-imei-direct-save-only"]]
+
+
+@pytest.mark.parametrize("conflict", [
+    "--inspect-smsm-client-certificate-imei-direct-save-readiness-only",
+    "--inspect-smsm-client-certificate-imei-option-selection-only",
+    "--run-single-certificate-workflow",
+])
+def test_client_certificate_direct_save_only_rejects_conflicts_before_browser(monkeypatch, capsys, conflict):
+    monkeypatch.setattr(mod, "Browser", lambda *_args: (_ for _ in ()).throw(AssertionError("browser must not start")))
+
+    assert mod._run_smsm_client_certificate_imei_direct_save_only([
+        "--execute-smsm-client-certificate-imei-direct-save-only", conflict,
+    ]) == 2
+    output = capsys.readouterr().out
+    assert "browser_start_called=False" in output
+    assert "device_binding_save_called=False" in output
+    assert "excel_write_called=False" in output
+
+
+def test_client_certificate_direct_save_only_early_failure_emits_safe_diagnostics(monkeypatch, capsys):
+    monkeypatch.setattr(mod, "load_config", lambda: {"excel": {"path": "unused"}})
+    monkeypatch.setattr(mod.ExcelReader, "read_targets", lambda *_args, **_kwargs: [])
+
+    assert mod._run_smsm_client_certificate_imei_direct_save_only([
+        "--execute-smsm-client-certificate-imei-direct-save-only",
+    ]) == 1
+    output = capsys.readouterr().out
+    assert "client_certificate_direct_save_only_runner_called=True" in output
+    assert "client_certificate_direct_save_only_result_available=True" in output
+    assert "client_certificate_direct_save_only_output_completed=True" in output
+    assert "client_certificate_direct_save_only_success=False" in output
+    assert "device_binding_save_called=False" in output
+
+
 @pytest.mark.parametrize("conflict", [
     "--inspect-smsm-client-certificate-edit-form-only",
     "--inspect-smsm-client-certificate-primary-input-only",

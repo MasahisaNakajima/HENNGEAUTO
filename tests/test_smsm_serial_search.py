@@ -62,6 +62,7 @@ class DomNode:
         self.displayed = displayed
         self.children = children or {}
         self.text = text
+        self.click_calls = 0
         self.parent = None
         for values in self.children.values():
             for child in values:
@@ -78,6 +79,9 @@ class DomNode:
 
     def send_keys(self, value):
         self.attrs["value"] = value
+
+    def click(self):
+        self.click_calls += 1
 
     def find_element(self, _by, value):
         if value == "./..":
@@ -1648,6 +1652,67 @@ def test_direct_save_readiness_allows_primary_value_only():
 
     assert result["client_certificate_direct_save_readiness_internal_value_resolution_method"] == "primary_value_only"
     assert result["client_certificate_primary_input_click_called"] is False
+
+
+def test_direct_save_target_refetch_clicks_current_save_once_without_candidate_or_cancel():
+    handler = handler_for(type("Driver", (), {})())
+    save = DomNode("button", text="保存")
+    cancel = DomNode("button", text="取消")
+    panel = DomNode("aside", children={"button,a,[role='button']": [save, cancel]})
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.refetch_direct_save_target_and_click(panel, "123456789012345")
+
+    assert result["client_certificate_direct_save_target_refetch_called"] is True
+    assert result["client_certificate_direct_save_target_candidate_count"] == 1
+    assert result["client_certificate_direct_save_target_unique"] is True
+    assert result["client_certificate_direct_save_target_attached"] is True
+    assert result["client_certificate_direct_save_target_nonzero_rect"] is True
+    assert result["device_binding_save_called"] is True
+    assert result["device_binding_save_count"] == 1
+    assert result["device_binding_save_retry_count"] == 0
+    assert result["device_binding_save_completed"] is True
+    assert save.click_calls == 1
+    assert cancel.click_calls == 0
+
+
+def test_direct_save_target_does_not_click_when_save_is_not_unique():
+    handler = handler_for(type("Driver", (), {})())
+    save_one = DomNode("button", text="保存")
+    save_two = DomNode("button", text="保存")
+    panel = DomNode("aside", children={"button,a,[role='button']": [save_one, save_two]})
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+
+    result = handler.refetch_direct_save_target_and_click(panel, "123456789012345")
+
+    assert result["client_certificate_direct_save_target_candidate_count"] == 2
+    assert result["device_binding_save_called"] is False
+    assert save_one.click_calls == 0
+    assert save_two.click_calls == 0
+
+
+def test_direct_save_wait_requires_two_stable_exact_value_observations():
+    handler = handler_for(type("Driver", (), {})())
+    configured = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    panel = DomNode("aside", children={"input": [configured]})
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._classify_client_certificate_panel = lambda _panel: {
+        "client_certificate_edit_state_detected": False,
+        "client_certificate_save_candidate_count": 0,
+        "client_certificate_cancel_candidate_count": 0,
+        "client_certificate_reference_edit_control_candidate_count": 1,
+        "client_certificate_view_state_detected": True,
+    }
+
+    result = handler.wait_for_direct_save_result(panel, "123456789012345", timeout=1)
+
+    assert result["client_certificate_direct_save_wait_called"] is True
+    assert result["client_certificate_direct_save_wait_completed"] is True
+    assert result["client_certificate_direct_save_wait_iteration_count"] >= 2
+    assert result["client_certificate_direct_save_configured_value_exact_match"] is True
+    assert result["client_certificate_direct_save_candidate_popup_disappeared"] is True
+    assert result["client_certificate_direct_save_result_verified"] is True
 
 
 def test_imei_send_keys_once_and_exact_suggestion_is_observed_without_selection(monkeypatch):
