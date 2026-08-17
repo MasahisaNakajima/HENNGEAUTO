@@ -1382,6 +1382,7 @@ class SmsmHandler:
             "client_certificate_option_selection_count": 0,
             "client_certificate_suggestion_keyboard_selection_called": False,
             "client_certificate_suggestion_keyboard_selection_count": 0,
+            "client_certificate_exact_suggestion_element": None,
         }
         primary = self.inspect_primary_client_certificate_input(panel)
         result.update(primary)
@@ -1458,6 +1459,8 @@ class SmsmHandler:
                 "client_certificate_imei_suggestion_relation_method": "aria_or_panel_descendant",
                 **near,
             }
+            if near.get("client_certificate_exact_suggestion_element") is not None:
+                last["client_certificate_exact_suggestion_element"] = near["client_certificate_exact_suggestion_element"]
             return bool(
                 (visible_containers and visible_options and len(exact) == 1)
                 or near.get("client_certificate_imei_near_input_candidate_unique") is True
@@ -1510,6 +1513,7 @@ class SmsmHandler:
             "client_certificate_imei_near_input_exact_deduplicated_count": 0,
             "client_certificate_imei_near_input_nested_duplicate_count": 0,
             "client_certificate_imei_near_input_deduplication_method": "unresolved",
+            "client_certificate_exact_suggestion_element": None,
         }
         try:
             observed = self.browser.driver.execute_script("""
@@ -1529,7 +1533,7 @@ class SmsmHandler:
                 const near=below.filter(e => e.getBoundingClientRect().top - inputRect.bottom <= 160);
                 const exact=near.filter(e => notAction(e) && !inputAncestors.includes(e) && (direct(e) === expected || safeText(e) === expected || String(e.value || '') === expected));
                 const dedup=exact.filter((e,i,a) => !a.some((other,j) => j<i && (other.contains(e) || e.contains(other) || (Math.abs(other.getBoundingClientRect().top-e.getBoundingClientRect().top)<3 && Math.abs(other.getBoundingClientRect().left-e.getBoundingClientRect().left)<3))));
-                return { raw:candidates.length, visible:visibleCandidates.length, nonzero:nonzero.length, below:below.length, same_field:near.length, same_panel:near.filter(e=>panel.contains(e)).length, exact:dedup.length, raw_exact:exact.length, unique:dedup.length === 1, candidate:dedup.length, visible_candidate:dedup.length === 1, method:dedup.length === 1 ? 'exact_text_near_input_portal' : 'unresolved', horizontal:geometric.length, vertical:near.length, center_below:below.length, overlap:geometric.length, portal:geometric.filter(e=>!panel.contains(e)).length, direct_match:exact.filter(e=>direct(e)===expected).length, content_match:exact.filter(e=>safeText(e)===expected).length, leaf_match:0, value_match:exact.filter(e=>String(e.value||'')===expected).length, raw_exact:exact.length, dedup_exact:dedup.length, nested_duplicate:exact.length-dedup.length, dedup_method:dedup.length ? 'leaf_text_and_geometry' : 'unresolved' };
+                return { raw:candidates.length, visible:visibleCandidates.length, nonzero:nonzero.length, below:below.length, same_field:near.length, same_panel:near.filter(e=>panel.contains(e)).length, exact:dedup.length, raw_exact:exact.length, unique:dedup.length === 1, candidate:dedup.length, visible_candidate:dedup.length === 1, method:dedup.length === 1 ? 'exact_text_near_input_portal' : 'unresolved', horizontal:geometric.length, vertical:near.length, center_below:below.length, overlap:geometric.length, portal:geometric.filter(e=>!panel.contains(e)).length, direct_match:exact.filter(e=>direct(e)===expected).length, content_match:exact.filter(e=>safeText(e)===expected).length, leaf_match:0, value_match:exact.filter(e=>String(e.value||'')===expected).length, raw_exact:exact.length, dedup_exact:dedup.length, nested_duplicate:exact.length-dedup.length, dedup_method:dedup.length ? 'leaf_text_and_geometry' : 'unresolved', representative:dedup.length === 1 ? dedup[0] : null };
             """, panel, input_element, imei) or {}
             mapping = {
                 "client_certificate_imei_near_input_raw_candidate_count": "raw",
@@ -1557,11 +1561,13 @@ class SmsmHandler:
                 "client_certificate_imei_near_input_nested_duplicate_count": "nested_duplicate",
                 "client_certificate_imei_near_input_deduplication_method": "dedup_method",
             }
-            return {**defaults, **{key: observed.get(source, defaults[key]) for key, source in mapping.items()}}
+            result = {**defaults, **{key: observed.get(source, defaults[key]) for key, source in mapping.items()}}
+            result["client_certificate_exact_suggestion_element"] = observed.get("representative")
+            return result
         except Exception:
             return defaults
 
-    def click_exact_imei_suggestion_once_and_verify(self, panel, input_element, imei: str, trace=None) -> dict[str, object]:
+    def click_exact_imei_suggestion_once_and_verify(self, panel, input_element, imei: str, trace=None, candidate=None) -> dict[str, object]:
         result = {
             "client_certificate_suggestion_click_called": False,
             "client_certificate_suggestion_click_count": 0,
@@ -1574,6 +1580,11 @@ class SmsmHandler:
             "client_certificate_suggestion_click_target_unique": False,
             "client_certificate_suggestion_click_target_visible": False,
             "client_certificate_suggestion_click_target_enabled": False,
+            "client_certificate_suggestion_click_target_source": "unresolved",
+            "client_certificate_suggestion_click_target_from_success_iteration": False,
+            "client_certificate_suggestion_click_target_revalidated": False,
+            "client_certificate_suggestion_click_target_stale": False,
+            "client_certificate_suggestion_click_target_attached": False,
             "client_certificate_option_selection_called": False,
             "client_certificate_option_selection_count": 0,
             "client_certificate_option_selection_method": "",
@@ -1595,16 +1606,30 @@ class SmsmHandler:
             "client_certificate_selection_state_resolution_method": "unresolved",
         }
         refreshed = self._near_input_suggestion_snapshot(panel, input_element, imei)
-        result["client_certificate_suggestion_click_target_refetched"] = True
+        target = candidate or refreshed.get("client_certificate_exact_suggestion_element")
+        result["client_certificate_suggestion_click_target_refetched"] = candidate is None
+        result["client_certificate_suggestion_click_target_source"] = "same_success_iteration_element" if candidate is not None else "current_dom_refetch" if target is not None else "unresolved"
+        result["client_certificate_suggestion_click_target_from_success_iteration"] = candidate is not None
+        if target is not None:
+            try:
+                target.is_enabled()
+                result["client_certificate_suggestion_click_target_revalidated"] = True
+                result["client_certificate_suggestion_click_target_attached"] = True
+            except StaleElementReferenceException:
+                result["client_certificate_suggestion_click_target_stale"] = True
+                return result
         result["client_certificate_suggestion_click_target_unique"] = refreshed.get("client_certificate_imei_near_input_candidate_unique") is True
         result["client_certificate_suggestion_click_target_exact_match"] = refreshed.get("client_certificate_imei_near_input_exact_match_count") == 1 or refreshed.get("client_certificate_imei_near_input_exact_deduplicated_count") == 1 or refreshed.get("client_certificate_imei_near_input_candidate_count") == 1
         result["client_certificate_suggestion_click_target_visible"] = refreshed.get("client_certificate_imei_near_input_candidate_visible") is True
-        result["client_certificate_suggestion_click_target_enabled"] = self._safe_bool(input_element, "is_enabled")
+        result["client_certificate_suggestion_click_target_enabled"] = self._safe_bool(target, "is_enabled") if target is not None else False
         if not all((result["client_certificate_suggestion_click_target_unique"], result["client_certificate_suggestion_click_target_exact_match"], result["client_certificate_suggestion_click_target_visible"], result["client_certificate_suggestion_click_target_enabled"])):
             return result
-        candidates = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "[role='option'],[role='listitem'],div,button,span,li,[tabindex]")
-        target = next((item for item in candidates if self._safe_element_text_for_diagnostic(item).strip() == imei and item is not input_element), None)
         if target is None:
+            return result
+        result["client_certificate_suggestion_click_target_exact_match"] = self._safe_element_text_for_diagnostic(target).strip() == imei
+        result["client_certificate_suggestion_click_target_visible"] = self._safe_bool(target, "is_displayed") or self._dom_visibility_verified(target)
+        result["client_certificate_suggestion_click_target_enabled"] = self._safe_bool(target, "is_enabled")
+        if not result["client_certificate_suggestion_click_target_exact_match"] or not result["client_certificate_suggestion_click_target_visible"] or not result["client_certificate_suggestion_click_target_enabled"]:
             return result
         result["client_certificate_suggestion_click_started"] = True
         try:

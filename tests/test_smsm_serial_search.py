@@ -1750,14 +1750,56 @@ def test_exact_suggestion_is_refetched_and_clicked_once_then_selection_state_is_
             return True
 
     monkeypatch.setattr(smsm_handler_module, "WebDriverWait", ImmediateWait)
-    result = handler.click_exact_imei_suggestion_once_and_verify(panel, input_node, "123456789012345")
+    result = handler.click_exact_imei_suggestion_once_and_verify(panel, input_node, "123456789012345", candidate=option)
 
     assert option.click_calls == 1
+    assert result["client_certificate_suggestion_click_target_source"] == "same_success_iteration_element"
     assert result["client_certificate_suggestion_click_count"] == 1
     assert result["client_certificate_option_selection_method"] == "exact_suggestion_normal_click"
     assert result["client_certificate_suggestion_keyboard_selection_called"] is False
     assert result["client_certificate_selection_state_detected"] is True
     assert result["client_certificate_selection_state_resolution_method"] == "input_value_and_candidate_disappearance"
+
+
+def test_success_iteration_candidate_is_revalidated_and_clicked_without_refetch():
+    handler = handler_for(type("Driver", (), {})())
+    input_node = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    option = DomNode("div", text="123456789012345")
+    option.click_calls = 0
+    option.click = lambda: setattr(option, "click_calls", option.click_calls + 1)
+    panel = DomNode("aside")
+    handler._near_input_suggestion_snapshot = lambda *_args: {
+        "client_certificate_imei_near_input_candidate_unique": True,
+        "client_certificate_imei_near_input_candidate_visible": True,
+        "client_certificate_imei_near_input_exact_match_count": 1,
+        "client_certificate_imei_near_input_exact_deduplicated_count": 1,
+        "client_certificate_imei_near_input_candidate_count": 1,
+    }
+    handler._safe_element_text_for_diagnostic = lambda element: element.text
+    handler._input_value = staticmethod(lambda element: element.get_attribute("value") or "123456789012345")
+    result = handler.click_exact_imei_suggestion_once_and_verify(panel, input_node, "123456789012345", candidate=option)
+
+    assert option.click_calls == 1
+    assert result["client_certificate_suggestion_click_target_source"] == "same_success_iteration_element"
+    assert result["client_certificate_suggestion_click_target_from_success_iteration"] is True
+    assert result["client_certificate_suggestion_click_target_refetched"] is False
+    assert result["client_certificate_suggestion_click_target_revalidated"] is True
+    assert result["client_certificate_suggestion_click_target_stale"] is False
+    assert result["client_certificate_suggestion_click_count"] == 1
+
+
+def test_stale_success_iteration_candidate_is_not_researched_or_clicked():
+    handler = handler_for(type("Driver", (), {})())
+    input_node = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    option = DomNode("div", text="123456789012345")
+    option.is_enabled = lambda: (_ for _ in ()).throw(smsm_handler_module.StaleElementReferenceException())
+    panel = DomNode("aside")
+    handler._near_input_suggestion_snapshot = lambda *_args: {"client_certificate_imei_near_input_candidate_unique": True, "client_certificate_imei_near_input_candidate_visible": True, "client_certificate_imei_near_input_exact_match_count": 1, "client_certificate_imei_near_input_exact_deduplicated_count": 1, "client_certificate_imei_near_input_candidate_count": 1}
+
+    result = handler.click_exact_imei_suggestion_once_and_verify(panel, input_node, "123456789012345", candidate=option)
+
+    assert result["client_certificate_suggestion_click_target_stale"] is True
+    assert result["client_certificate_suggestion_click_called"] is False
 
 
 def test_edit_marker_wait_succeeds_without_strict_form_wait(monkeypatch):

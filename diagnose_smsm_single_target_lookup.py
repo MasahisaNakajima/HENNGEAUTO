@@ -2615,6 +2615,7 @@ def _run_smsm_client_certificate_imei_option_selection_only(args: list[str]) -> 
         result.pop("panel", None)
         result.pop("device_detail_panel", None)
         result.pop("edit_form", None)
+        result.pop("client_certificate_exact_suggestion_element", None)
         result.setdefault("failed_stage", current_stage if code == 1 else "")
         result.setdefault("last_completed_stage", last_completed_stage)
         result.setdefault("exception_type", "")
@@ -2676,7 +2677,7 @@ def _run_smsm_client_certificate_imei_option_selection_only(args: list[str]) -> 
             result["failed_stage"] = current_stage
             return finalize(result, 1)
         current_stage = "client_certificate_imei_selection_only_click_exact_suggestion"
-        result.update(service.smsm.click_exact_imei_suggestion_once_and_verify(panel, inputs[0], imei))
+        result.update(service.smsm.click_exact_imei_suggestion_once_and_verify(panel, inputs[0], imei, candidate=result.get("client_certificate_exact_suggestion_element")))
         result["last_completed_stage"] = current_stage
         current_stage = "client_certificate_imei_selection_only_wait_selection_state"
         success = result.get("client_certificate_suggestion_click_completed") is True and result.get("client_certificate_selection_state_detected") is True and result.get("client_certificate_option_selection_count") == 1 and result.get("device_binding_save_called") is False and result.get("excel_write_called") is False
