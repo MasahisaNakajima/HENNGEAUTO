@@ -1486,6 +1486,42 @@ def test_client_certificate_edit_state_reports_save_cancel_visibility_and_enable
     assert state["client_certificate_cancel_enabled"] is True
 
 
+def test_certificate_edit_transition_requires_reference_markers_to_disappear_and_edit_markers_to_appear():
+    handler = handler_for(type("Driver", (), {})())
+    result = {
+        "client_certificate_edit_click_completed": True,
+        "client_certificate_before_unconfigured_count": 1,
+        "client_certificate_before_edit_count": 1,
+        "client_certificate_before_save_count": 0,
+        "client_certificate_before_cancel_count": 0,
+        "client_certificate_after_unconfigured_count": 0,
+        "client_certificate_after_edit_count": 0,
+        "client_certificate_after_save_count": 1,
+        "client_certificate_after_cancel_count": 1,
+        "client_certificate_after_control_element_count": 2,
+    }
+
+    assert handler._certificate_edit_transition_detected(result) is True
+
+
+def test_certificate_edit_transition_rejects_remaining_reference_markers():
+    handler = handler_for(type("Driver", (), {})())
+    result = {
+        "client_certificate_edit_click_completed": True,
+        "client_certificate_before_unconfigured_count": 1,
+        "client_certificate_before_edit_count": 1,
+        "client_certificate_before_save_count": 0,
+        "client_certificate_before_cancel_count": 0,
+        "client_certificate_after_unconfigured_count": 1,
+        "client_certificate_after_edit_count": 0,
+        "client_certificate_after_save_count": 1,
+        "client_certificate_after_cancel_count": 1,
+        "client_certificate_after_control_element_count": 2,
+    }
+
+    assert handler._certificate_edit_transition_detected(result) is False
+
+
 def test_client_certificate_input_and_expand_button_are_one_logical_control():
     handler = handler_for(type("Driver", (), {})())
     panel = DomNode("aside", text="クライアント証明書（デフォルト） 保存 取消")

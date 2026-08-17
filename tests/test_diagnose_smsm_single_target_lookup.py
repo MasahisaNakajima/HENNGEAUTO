@@ -1799,6 +1799,80 @@ def test_edit_form_observation_scalar_merge_excludes_internal_objects():
     assert "nested" not in merged
 
 
+def _edit_form_success_result(**overrides):
+    result = {
+        "device_result_identity_verified": True,
+        "other_settings_click_count": 1,
+        "client_certificate_item_click_count": 1,
+        "client_certificate_edit_state_detected": True,
+        "client_certificate_edit_transition_detected": True,
+        "client_certificate_edit_control_presence_verified": True,
+        "client_certificate_after_control_element_count": 2,
+        "client_certificate_save_candidate_count": 1,
+        "client_certificate_cancel_candidate_count": 1,
+        "client_certificate_edit_click_count": 1,
+        "client_certificate_primary_input_resolved": False,
+        "client_certificate_primary_input_resolution_required": True,
+    }
+    result.update(overrides)
+    return result
+
+
+def _edit_form_safe_operations(**overrides):
+    operations = {
+        "client_certificate_selection_control_click_called": False,
+        "client_certificate_option_selection_called": False,
+        "device_imei_send_keys_called": False,
+        "device_binding_save_called": False,
+        "client_certificate_cancel_click_called": False,
+        "excel_write_called": False,
+        "certificate_upload_called": False,
+    }
+    operations.update(overrides)
+    return operations
+
+
+def test_edit_form_cli_accepts_two_input_elements_when_state_transition_is_valid():
+    assert mod._client_certificate_edit_form_success(_edit_form_success_result(), _edit_form_safe_operations()) is True
+
+
+def test_edit_form_cli_accepts_unresolved_primary_input_without_forbidden_operations():
+    result = _edit_form_success_result(client_certificate_primary_input_resolved=False)
+    assert mod._client_certificate_edit_form_success(result, _edit_form_safe_operations()) is True
+    assert result["client_certificate_primary_input_resolution_required"] is True
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("client_certificate_save_candidate_count", 0),
+        ("client_certificate_save_candidate_count", 2),
+        ("client_certificate_cancel_candidate_count", 0),
+        ("client_certificate_cancel_candidate_count", 2),
+        ("client_certificate_edit_state_detected", False),
+        ("client_certificate_edit_transition_detected", False),
+    ],
+)
+def test_edit_form_cli_rejects_invalid_edit_state_markers(field, value):
+    assert mod._client_certificate_edit_form_success(_edit_form_success_result(**{field: value}), _edit_form_safe_operations()) is False
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "client_certificate_selection_control_click_called",
+        "client_certificate_option_selection_called",
+        "device_imei_send_keys_called",
+        "device_binding_save_called",
+        "client_certificate_cancel_click_called",
+        "excel_write_called",
+        "certificate_upload_called",
+    ],
+)
+def test_edit_form_cli_rejects_forbidden_operation(operation):
+    assert mod._client_certificate_edit_form_success(_edit_form_success_result(), _edit_form_safe_operations(**{operation: True})) is False
+
+
 def test_name_error_diagnostics_include_safe_name_and_project_frame(tmp_path):
     def raise_name_error():
         raise NameError("private detail", name="missing_public_name")

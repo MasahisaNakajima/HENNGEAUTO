@@ -2188,6 +2188,28 @@ def _key_error_diagnostics(exc: BaseException) -> dict[str, object]:
     return {"exception_key_present": key is not None, "exception_key_safe": safe, "exception_key_class": "KeyError"}
 
 
+def _client_certificate_edit_form_success(result: dict[str, object], operations: dict[str, object]) -> bool:
+    return all((
+        result.get("device_result_identity_verified") is True,
+        result.get("other_settings_click_count") == 1,
+        result.get("client_certificate_item_click_count") == 1,
+        result.get("client_certificate_edit_state_detected") is True,
+        result.get("client_certificate_edit_transition_detected") is True,
+        result.get("client_certificate_edit_control_presence_verified") is True,
+        result.get("client_certificate_after_control_element_count", 0) >= 1,
+        result.get("client_certificate_save_candidate_count") == 1,
+        result.get("client_certificate_cancel_candidate_count") == 1,
+        result.get("client_certificate_edit_click_count") == 1,
+        operations.get("client_certificate_selection_control_click_called") is False,
+        operations.get("client_certificate_option_selection_called") is False,
+        operations.get("device_imei_send_keys_called") is False,
+        operations.get("device_binding_save_called") is False,
+        operations.get("client_certificate_cancel_click_called") is False,
+        operations.get("excel_write_called") is False,
+        operations.get("certificate_upload_called") is False,
+    ))
+
+
 def _run_smsm_client_certificate_edit_form_only(args: list[str]) -> int:
     """Inspect the certificate edit form without selecting or saving."""
     logger = AppLogger(_base_dir(), unique_log=True)
@@ -2284,24 +2306,7 @@ def _run_smsm_client_certificate_edit_form_only(args: list[str]) -> int:
             complete()
         result.pop("client_certificate_panel", None)
         result.update(operations)
-        success = all((
-            result.get("device_result_identity_verified") is True,
-            result.get("other_settings_click_count") == 1,
-            result.get("client_certificate_item_click_count") == 1,
-            result.get("client_certificate_edit_state_detected") is True,
-            result.get("client_certificate_selection_control_candidate_count") == 1,
-            result.get("client_certificate_control_resolution_method") != "unresolved",
-            result.get("client_certificate_control_current_value_present") is not result.get("client_certificate_control_current_value_blank"),
-            result.get("client_certificate_save_candidate_count") == 1,
-            result.get("client_certificate_cancel_candidate_count") == 1,
-            result.get("client_certificate_edit_click_count") in {0, 1},
-            result.get("client_certificate_selection_control_click_called") is False,
-            result.get("client_certificate_option_selection_called") is False,
-            result.get("device_imei_send_keys_called") is False,
-            result.get("device_binding_save_called") is False,
-            result.get("client_certificate_cancel_click_called") is False,
-            result.get("excel_write_called") is False,
-        ))
+        success = _client_certificate_edit_form_success(result, operations)
         result["failed_stage"] = "" if success else current_stage
         result["last_completed_stage"] = last_completed_stage
         result["exception_type"] = ""

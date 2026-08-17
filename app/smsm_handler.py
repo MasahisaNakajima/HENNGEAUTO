@@ -1018,6 +1018,28 @@ class SmsmHandler:
         """Reach the certificate form, click Edit only from view state, then inspect controls."""
         result = self.inspect_client_certificate_navigation_only(serial, trace=trace)
         result.update({
+            "client_certificate_before_unconfigured_count": 0,
+            "client_certificate_before_edit_count": 0,
+            "client_certificate_before_save_count": 0,
+            "client_certificate_before_cancel_count": 0,
+            "client_certificate_before_control_element_count": 0,
+            "client_certificate_after_unconfigured_count": 0,
+            "client_certificate_after_edit_count": 0,
+            "client_certificate_after_save_count": 0,
+            "client_certificate_after_cancel_count": 0,
+            "client_certificate_after_control_element_count": 0,
+            "client_certificate_edit_transition_detected": False,
+            "client_certificate_unconfigured_disappeared": False,
+            "client_certificate_edit_disappeared": False,
+            "client_certificate_save_appeared": False,
+            "client_certificate_cancel_appeared": False,
+            "client_certificate_control_appeared": False,
+            "client_certificate_edit_control_presence_verified": False,
+            "client_certificate_edit_control_element_count": 0,
+            "client_certificate_edit_control_field_container_count": 0,
+            "client_certificate_edit_control_requires_primary_resolution": True,
+            "client_certificate_primary_input_resolved": False,
+            "client_certificate_primary_input_resolution_required": True,
             "client_certificate_reference_state_verified": False,
             "client_certificate_reference_edit_clicked": False,
             "client_certificate_edit_click_started": False,
@@ -1084,6 +1106,7 @@ class SmsmHandler:
         state = self._wait_for_client_certificate_state(timeout=10, expected_state="view", trace=trace)
         panel = state.get("panel")
         result.update(state)
+        result.update(self._certificate_state_counts(state))
         result["client_certificate_reference_state_verified"] = state.get("client_certificate_view_state_detected") is True
         if state["client_certificate_view_state_detected"] and state["client_certificate_edit_state_detected"]:
             result["client_certificate_state_resolution_method"] = "ambiguous"
@@ -1116,6 +1139,11 @@ class SmsmHandler:
             result["client_certificate_edit_click_count"] = 1
             result["client_certificate_edit_click_completed"] = True
             result["client_certificate_reference_edit_clicked"] = True
+            result["client_certificate_before_unconfigured_count"] = int(result.get("client_certificate_unconfigured_text_candidate_count", 0) or 0)
+            result["client_certificate_before_edit_count"] = int(result.get("client_certificate_edit_candidate_count", 0) or 0)
+            result["client_certificate_before_save_count"] = result.get("client_certificate_save_candidate_count", 0)
+            result["client_certificate_before_cancel_count"] = result.get("client_certificate_cancel_candidate_count", 0)
+            result["client_certificate_before_control_element_count"] = result.get("client_certificate_selection_control_candidate_count", 0)
             refreshed = self._wait_for_client_certificate_edit_form(timeout=10, trace=trace, panel=panel)
             result.update({key: value for key, value in refreshed.items() if key != "panel"})
             if not refreshed.get("client_certificate_edit_state_detected"):
@@ -1132,6 +1160,16 @@ class SmsmHandler:
                 "client_certificate_edit_form_contains_search_input": bool(self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input[name*='query' i],input[aria-label*='search' i]")),
                 "client_certificate_edit_form_contains_result_table": bool(self._safe_find_elements_from(panel, By.CSS_SELECTOR, "table")),
             })
+            result.update(self._certificate_state_counts(refreshed))
+            result["client_certificate_edit_transition_detected"] = self._certificate_edit_transition_detected(result)
+            result["client_certificate_unconfigured_disappeared"] = result.get("client_certificate_after_unconfigured_count") == 0
+            result["client_certificate_edit_disappeared"] = result.get("client_certificate_after_edit_count") == 0
+            result["client_certificate_save_appeared"] = result.get("client_certificate_after_save_count") == 1
+            result["client_certificate_cancel_appeared"] = result.get("client_certificate_after_cancel_count") == 1
+            result["client_certificate_control_appeared"] = result.get("client_certificate_after_control_element_count", 0) >= 1
+            result["client_certificate_edit_control_presence_verified"] = result["client_certificate_control_appeared"]
+            result["client_certificate_edit_control_element_count"] = result.get("client_certificate_after_control_element_count", 0)
+            result["client_certificate_edit_control_field_container_count"] = result.get("client_certificate_control_logical_group_count", 0)
         result.pop("client_certificate_panel", None)
         return result
 
@@ -1156,6 +1194,31 @@ class SmsmHandler:
             if candidate is not None and not any(candidate is existing or candidate == existing for existing in candidates):
                 candidates.append(candidate)
         return candidates
+
+    @staticmethod
+    def _certificate_edit_transition_detected(result: dict[str, object]) -> bool:
+        return bool(
+            result.get("client_certificate_edit_click_completed") is True
+            and result.get("client_certificate_before_unconfigured_count") == 1
+            and result.get("client_certificate_before_edit_count") == 1
+            and result.get("client_certificate_before_save_count") == 0
+            and result.get("client_certificate_before_cancel_count") == 0
+            and result.get("client_certificate_after_unconfigured_count") == 0
+            and result.get("client_certificate_after_edit_count") == 0
+            and result.get("client_certificate_after_save_count") == 1
+            and result.get("client_certificate_after_cancel_count") == 1
+            and result.get("client_certificate_after_control_element_count", 0) >= 1
+        )
+
+    @staticmethod
+    def _certificate_state_counts(state: dict[str, object]) -> dict[str, object]:
+        return {
+            "client_certificate_after_unconfigured_count": int(state.get("client_certificate_unconfigured_text_candidate_count", 0) or 0),
+            "client_certificate_after_edit_count": int(state.get("client_certificate_edit_candidate_count", state.get("client_certificate_reference_edit_control_candidate_count", 0)) or 0),
+            "client_certificate_after_save_count": int(state.get("client_certificate_save_candidate_count", 0) or 0),
+            "client_certificate_after_cancel_count": int(state.get("client_certificate_cancel_candidate_count", 0) or 0),
+            "client_certificate_after_control_element_count": int(state.get("client_certificate_selection_control_candidate_count", 0) or 0),
+        }
 
     def _wait_for_client_certificate_edit_form(self, timeout: float = 10.0, trace=None, panel=None) -> dict[str, object]:
         iterations = 0
