@@ -1296,6 +1296,134 @@ class SmsmHandler:
             result["client_certificate_primary_input_resolution_method"] = "visible_nonhidden_edit_field_input"
         return result
 
+    def send_imei_once_and_inspect_suggestions(self, panel, imei: str, trace=None) -> dict[str, object]:
+        result = {
+            "device_imei_send_keys_called": False,
+            "device_imei_send_keys_count": 0,
+            "device_imei_send_keys_completed": False,
+            "device_imei_send_keys_exception_type": "",
+            "device_imei_send_keys_retry_count": 0,
+            "device_imei_input_value_present": False,
+            "device_imei_input_exact_match": False,
+            "device_imei_input_trimmed_match": False,
+            "device_imei_input_length_match": False,
+            "device_imei_input_prefix_preserved": False,
+            "device_imei_input_suffix_preserved": False,
+            "device_imei_input_was_truncated": False,
+            "device_imei_input_was_duplicated": False,
+            "device_imei_input_was_transformed": False,
+            "client_certificate_imei_suggestion_wait_called": False,
+            "client_certificate_imei_suggestion_wait_completed": False,
+            "client_certificate_imei_suggestion_wait_iteration_count": 0,
+            "client_certificate_imei_suggestion_wait_timeout": False,
+            "client_certificate_imei_suggestion_container_candidate_count": 0,
+            "client_certificate_imei_suggestion_container_unique": False,
+            "client_certificate_imei_suggestion_container_visible": False,
+            "client_certificate_imei_suggestion_listbox_visible": False,
+            "client_certificate_imei_suggestion_popup_open": False,
+            "client_certificate_imei_suggestion_raw_option_count": 0,
+            "client_certificate_imei_suggestion_visible_option_count": 0,
+            "client_certificate_imei_suggestion_nonblank_option_count": 0,
+            "client_certificate_imei_exact_option_candidate_count": 0,
+            "client_certificate_imei_exact_option_unique": False,
+            "client_certificate_imei_exact_option_found": False,
+            "client_certificate_imei_exact_option_resolution_method": "unresolved",
+            "client_certificate_suggestion_click_called": False,
+            "client_certificate_suggestion_click_count": 0,
+            "client_certificate_option_selection_called": False,
+            "client_certificate_option_selection_count": 0,
+            "client_certificate_suggestion_keyboard_selection_called": False,
+            "client_certificate_suggestion_keyboard_selection_count": 0,
+        }
+        primary = self.inspect_primary_client_certificate_input(panel)
+        result.update(primary)
+        if not (primary.get("client_certificate_primary_input_candidate_count") == 1 and primary.get("client_certificate_primary_input_resolved") is True):
+            return result
+        candidates = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input,textarea,[role='combobox'],[contenteditable='true']")
+        eligible = []
+        for candidate in candidates:
+            visibility = self._dom_visibility_probe(candidate)
+            input_type = str(self._safe_attribute(candidate, "type") or "").casefold()
+            aria_hidden = str(self._safe_attribute(candidate, "aria-hidden") or "").casefold() == "true"
+            disabled = self._safe_bool_attribute(candidate, "disabled") or not self._safe_bool(candidate, "is_enabled")
+            attached = self._safe_bool(candidate, "is_enabled") or self._safe_bool(candidate, "is_displayed")
+            if attached and (self._safe_bool(candidate, "is_displayed") or bool(visibility.get("visible"))) and bool(visibility.get("visible")) and input_type != "hidden" and not aria_hidden and not disabled:
+                eligible.append(candidate)
+        if len(eligible) != 1:
+            return result
+        input_element = eligible[0]
+        before = self._input_value(input_element)
+        if before:
+            return result
+        result["device_imei_send_keys_called"] = True
+        result["device_imei_send_keys_count"] = 1
+        try:
+            input_element.send_keys(imei)
+            result["device_imei_send_keys_completed"] = True
+        except Exception as exc:
+            result["device_imei_send_keys_exception_type"] = type(exc).__name__
+            return result
+        after = self._input_value(input_element)
+        result["device_imei_input_value_present"] = bool(after)
+        result["device_imei_input_exact_match"] = after == imei
+        result["device_imei_input_trimmed_match"] = after.strip() == imei
+        result["device_imei_input_length_match"] = len(after) == len(imei)
+        result["device_imei_input_prefix_preserved"] = bool(after) and after[:1] == imei[:1]
+        result["device_imei_input_suffix_preserved"] = bool(after) and after[-1:] == imei[-1:]
+        result["device_imei_input_was_truncated"] = bool(after) and len(after) < len(imei)
+        result["device_imei_input_was_duplicated"] = len(after) > len(imei) or (len(imei) > 0 and after.count(imei) > 1)
+        result["device_imei_input_was_transformed"] = bool(after) and after != imei
+        if not result["device_imei_input_exact_match"]:
+            return result
+        self._trace(trace, "client_certificate_imei_suggestion_wait_called", True)
+        iterations = 0
+        last = None
+        def locate(_driver):
+            nonlocal iterations, last
+            iterations += 1
+            containers = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "[role='listbox'],[aria-autocomplete='list'],[aria-live='polite']")
+            visible_containers = [item for item in containers if self._safe_bool(item, "is_displayed") or self._dom_visibility_probe(item).get("visible")]
+            options = []
+            for container in visible_containers:
+                options.extend(self._safe_find_elements_from(container, By.CSS_SELECTOR, "[role='option'],li,[data-option-index]"))
+            visible_options = [item for item in options if self._safe_bool(item, "is_displayed") or self._dom_visibility_probe(item).get("visible")]
+            exact = []
+            for option in visible_options:
+                text = self._safe_element_text_for_diagnostic(option)
+                value = str(self._safe_attribute(option, "value") or "")
+                if text == imei or value == imei:
+                    exact.append(option)
+            last = {
+                "client_certificate_imei_suggestion_container_candidate_count": len(containers),
+                "client_certificate_imei_suggestion_container_unique": len(containers) == 1,
+                "client_certificate_imei_suggestion_container_visible": bool(visible_containers),
+                "client_certificate_imei_suggestion_listbox_visible": bool(visible_containers),
+                "client_certificate_imei_suggestion_popup_open": bool(visible_containers),
+                "client_certificate_imei_suggestion_raw_option_count": len(options),
+                "client_certificate_imei_suggestion_visible_option_count": len(visible_options),
+                "client_certificate_imei_suggestion_nonblank_option_count": sum(bool(self._safe_element_text_for_diagnostic(item).strip()) for item in visible_options),
+                "client_certificate_imei_exact_option_candidate_count": len(exact),
+                "client_certificate_imei_exact_option_unique": len(exact) == 1,
+                "client_certificate_imei_exact_option_found": bool(exact),
+                "client_certificate_imei_exact_option_resolution_method": "exact_text" if exact else "unresolved",
+                "client_certificate_imei_suggestion_relation_method": "aria_or_panel_descendant",
+            }
+            return bool(visible_containers and visible_options and len(exact) == 1)
+        try:
+            WebDriverWait(self.browser.driver, 10, poll_frequency=0.25).until(locate)
+            completed = True
+        except TimeoutException:
+            completed = False
+        result.update(last or {})
+        result.update({
+            "client_certificate_imei_suggestion_wait_called": True,
+            "client_certificate_imei_suggestion_wait_completed": completed,
+            "client_certificate_imei_suggestion_wait_iteration_count": iterations,
+            "client_certificate_imei_suggestion_wait_timeout": not completed,
+        })
+        self._trace(trace, "client_certificate_imei_suggestion_wait_completed", completed)
+        return result
+
     @staticmethod
     def _certificate_edit_transition_detected(result: dict[str, object]) -> bool:
         return bool(

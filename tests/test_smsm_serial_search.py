@@ -76,6 +76,9 @@ class DomNode:
     def is_enabled(self):
         return True
 
+    def send_keys(self, value):
+        self.attrs["value"] = value
+
     def find_element(self, _by, value):
         if value == "./..":
             return self.parent
@@ -1584,6 +1587,56 @@ def test_primary_input_observation_excludes_hidden_and_disabled_candidates():
     assert result["client_certificate_primary_input_candidate_count"] == 0
     assert result["client_certificate_primary_input_resolved"] is False
     assert result["client_certificate_primary_input_click_called"] is False
+
+
+def test_imei_send_keys_once_and_exact_suggestion_is_observed_without_selection(monkeypatch):
+    handler = handler_for(type("Driver", (), {})())
+    input_node = DomNode("input", attrs={"type": "text", "tabindex": "0"})
+    option = DomNode("li", attrs={"role": "option"}, text="sensitive-imei")
+    listbox = DomNode("div", attrs={"role": "listbox"}, children={"[role='option'],li,[data-option-index]": [option]})
+    panel = DomNode("aside", children={"input,textarea,[role='combobox'],[contenteditable='true']": [input_node], "[role='listbox'],[aria-autocomplete='list'],[aria-live='polite']": [listbox]})
+    handler._safe_find_elements_from = lambda element, _by, selector: element.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+    option.text = "123456789012345"
+    listbox.is_displayed = lambda: True
+    input_node.is_displayed = lambda: True
+    input_node.is_enabled = lambda: True
+
+    class ImmediateWait:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def until(self, predicate):
+            assert predicate(None) is True
+            return True
+
+    monkeypatch.setattr(smsm_handler_module, "WebDriverWait", ImmediateWait)
+    result = handler.send_imei_once_and_inspect_suggestions(panel, "123456789012345")
+
+    assert result["device_imei_send_keys_called"] is True
+    assert result["device_imei_send_keys_count"] == 1
+    assert result["device_imei_send_keys_completed"] is True
+    assert result["device_imei_input_exact_match"] is True
+    assert result["client_certificate_imei_exact_option_found"] is True
+    assert result["client_certificate_imei_exact_option_unique"] is True
+    assert result["client_certificate_suggestion_click_called"] is False
+    assert result["client_certificate_option_selection_called"] is False
+
+
+def test_imei_send_keys_does_not_retry_when_input_value_mismatches():
+    handler = handler_for(type("Driver", (), {})())
+    input_node = DomNode("input", attrs={"type": "text", "tabindex": "0"})
+    input_node.send_keys = lambda _value: input_node.attrs.__setitem__("value", "wrong")
+    panel = DomNode("aside", children={"input,textarea,[role='combobox'],[contenteditable='true']": [input_node]})
+    handler._safe_find_elements_from = lambda element, _by, selector: element.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.send_imei_once_and_inspect_suggestions(panel, "123456789012345")
+
+    assert result["device_imei_send_keys_count"] == 1
+    assert result["device_imei_input_exact_match"] is False
+    assert result["device_imei_send_keys_retry_count"] == 0
+    assert result["client_certificate_imei_suggestion_wait_called"] is False
 
 
 def test_edit_marker_wait_succeeds_without_strict_form_wait(monkeypatch):
