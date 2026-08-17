@@ -1547,6 +1547,36 @@ def test_edit_click_calls_edit_form_wait_once_and_merges_failed_result():
     assert result["client_certificate_edit_form_wait_timeout"] is True
 
 
+def test_edit_form_wait_reuses_same_panel_and_refreshes_children():
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside")
+    classifications = iter([
+        {"client_certificate_edit_state_detected": True, "client_certificate_selection_control_candidate_count": 1, "client_certificate_save_candidate_count": 1, "client_certificate_cancel_candidate_count": 1},
+    ])
+    handler._classify_client_certificate_panel = lambda current: next(classifications)
+    result = handler._wait_for_client_certificate_edit_form(timeout=1, panel=panel)
+
+    assert result["client_certificate_edit_form_wait_completed"] is True
+    assert result["client_certificate_panel_same_dom_identity_after_edit"] is True
+    assert result["client_certificate_panel_reacquired_after_edit"] is False
+    assert result["client_certificate_edit_form_same_panel_state_refresh"] is True
+
+
+def test_edit_form_wait_reacquires_panel_when_old_panel_is_stale(monkeypatch):
+    handler = handler_for(type("Driver", (), {})())
+    old_panel = DomNode("aside")
+    new_panel = DomNode("aside")
+    old_panel.is_enabled = lambda: (_ for _ in ()).throw(smsm_handler_module.StaleElementReferenceException())
+    handler._wait_for_named_panel = lambda *_args, **_kwargs: {"unique": True, "panel": new_panel}
+    handler._classify_client_certificate_panel = lambda _panel: {"client_certificate_edit_state_detected": True, "client_certificate_selection_control_candidate_count": 1, "client_certificate_save_candidate_count": 1, "client_certificate_cancel_candidate_count": 1}
+
+    result = handler._wait_for_client_certificate_edit_form(timeout=1, panel=old_panel)
+
+    assert result["client_certificate_panel_stale_after_edit"] is True
+    assert result["client_certificate_panel_reacquired_after_edit"] is True
+    assert result["client_certificate_panel_same_dom_identity_after_edit"] is False
+
+
 def test_edit_form_wait_is_not_called_when_edit_click_fails():
     handler = handler_for(type("Driver", (), {})())
     edit = DomNode("button", text="編集")

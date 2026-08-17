@@ -1116,7 +1116,7 @@ class SmsmHandler:
             result["client_certificate_edit_click_count"] = 1
             result["client_certificate_edit_click_completed"] = True
             result["client_certificate_reference_edit_clicked"] = True
-            refreshed = self._wait_for_client_certificate_edit_form(timeout=10, trace=trace)
+            refreshed = self._wait_for_client_certificate_edit_form(timeout=10, trace=trace, panel=panel)
             result.update({key: value for key, value in refreshed.items() if key != "panel"})
             if not refreshed.get("client_certificate_edit_state_detected"):
                 result.pop("client_certificate_panel", None)
@@ -1157,18 +1157,34 @@ class SmsmHandler:
                 candidates.append(candidate)
         return candidates
 
-    def _wait_for_client_certificate_edit_form(self, timeout: float = 10.0, trace=None) -> dict[str, object]:
+    def _wait_for_client_certificate_edit_form(self, timeout: float = 10.0, trace=None, panel=None) -> dict[str, object]:
         iterations = 0
         latest = None
-        panel = None
+        panel_identity_recorded = panel is not None
+        panel_same_dom = False
+        panel_stale = False
+        panel_reacquired = False
         self._trace(trace, "client_certificate_edit_state_wait_called", True)
         def locate(_driver):
-            nonlocal iterations, latest, panel
+            nonlocal iterations, latest, panel, panel_same_dom, panel_stale, panel_reacquired
             iterations += 1
-            candidate = self._wait_for_named_panel(("クライアント証明書", "Client certificate"), timeout=0.1)
-            if not candidate.get("unique"):
-                return False
-            panel = candidate.get("panel")
+            candidate_panel = None
+            if panel is not None:
+                try:
+                    panel.is_enabled()
+                    candidate_panel = panel
+                    panel_same_dom = True
+                except StaleElementReferenceException:
+                    panel_stale = True
+                    panel = None
+            if candidate_panel is None:
+                candidate = self._wait_for_named_panel(("クライアント証明書", "Client certificate"), timeout=0.1)
+                if not candidate.get("unique"):
+                    return False
+                panel = candidate.get("panel")
+                candidate_panel = panel
+                panel_reacquired = True
+            panel = candidate_panel
             latest = self._classify_client_certificate_panel(panel)
             return panel if latest.get("client_certificate_edit_state_detected") else False
         try:
@@ -1202,6 +1218,12 @@ class SmsmHandler:
             "client_certificate_edit_form_wait_function_call_count": 1,
             "client_certificate_edit_form_wait_started_after_click": True,
             "client_certificate_edit_form_wait_received_old_panel": False,
+            "client_certificate_panel_identity_recorded_before_edit": panel_identity_recorded,
+            "client_certificate_panel_identity_available_after_edit": panel is not None,
+            "client_certificate_panel_same_dom_identity_after_edit": panel_same_dom,
+            "client_certificate_panel_stale_after_edit": panel_stale,
+            "client_certificate_panel_reacquired_after_edit": panel_reacquired,
+            "client_certificate_edit_form_same_panel_state_refresh": panel_same_dom,
             **visibility,
             "client_certificate_edit_form_candidate_right_side_count": 1 if panel is not None else 0,
             "client_certificate_edit_form_candidate_heading_count": 1 if panel is not None else 0,
