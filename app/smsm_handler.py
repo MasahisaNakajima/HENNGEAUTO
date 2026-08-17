@@ -1340,6 +1340,42 @@ class SmsmHandler:
             "client_certificate_imei_near_input_candidate_unique": False,
             "client_certificate_imei_near_input_candidate_visible": False,
             "client_certificate_imei_suggestion_resolution_method": "unresolved",
+            "client_certificate_imei_near_input_horizontal_overlap_count": 0,
+            "client_certificate_imei_near_input_vertical_near_count": 0,
+            "client_certificate_imei_near_input_center_below_count": 0,
+            "client_certificate_imei_near_input_overlapping_rect_count": 0,
+            "client_certificate_imei_near_input_portal_candidate_count": 0,
+            "client_certificate_imei_near_input_direct_text_match_count": 0,
+            "client_certificate_imei_near_input_text_content_match_count": 0,
+            "client_certificate_imei_near_input_leaf_text_match_count": 0,
+            "client_certificate_imei_near_input_value_match_count": 0,
+            "client_certificate_imei_near_input_excluded_self_count": 0,
+            "client_certificate_imei_near_input_excluded_ancestor_count": 0,
+            "client_certificate_imei_near_input_excluded_save_cancel_count": 0,
+            "client_certificate_imei_near_input_excluded_background_count": 0,
+            "client_certificate_imei_near_input_unclassified_count": 0,
+            "client_certificate_imei_near_input_exact_raw_match_count": 0,
+            "client_certificate_imei_near_input_exact_deduplicated_count": 0,
+            "client_certificate_imei_near_input_nested_duplicate_count": 0,
+            "client_certificate_imei_near_input_deduplication_method": "unresolved",
+            "client_certificate_imei_near_input_horizontal_overlap_count": 0,
+            "client_certificate_imei_near_input_vertical_near_count": 0,
+            "client_certificate_imei_near_input_center_below_count": 0,
+            "client_certificate_imei_near_input_overlapping_rect_count": 0,
+            "client_certificate_imei_near_input_portal_candidate_count": 0,
+            "client_certificate_imei_near_input_direct_text_match_count": 0,
+            "client_certificate_imei_near_input_text_content_match_count": 0,
+            "client_certificate_imei_near_input_leaf_text_match_count": 0,
+            "client_certificate_imei_near_input_value_match_count": 0,
+            "client_certificate_imei_near_input_excluded_self_count": 0,
+            "client_certificate_imei_near_input_excluded_ancestor_count": 0,
+            "client_certificate_imei_near_input_excluded_save_cancel_count": 0,
+            "client_certificate_imei_near_input_excluded_background_count": 0,
+            "client_certificate_imei_near_input_unclassified_count": 0,
+            "client_certificate_imei_near_input_exact_raw_match_count": 0,
+            "client_certificate_imei_near_input_exact_deduplicated_count": 0,
+            "client_certificate_imei_near_input_nested_duplicate_count": 0,
+            "client_certificate_imei_near_input_deduplication_method": "unresolved",
             "client_certificate_suggestion_click_called": False,
             "client_certificate_suggestion_click_count": 0,
             "client_certificate_option_selection_called": False,
@@ -1422,7 +1458,16 @@ class SmsmHandler:
                 "client_certificate_imei_suggestion_relation_method": "aria_or_panel_descendant",
                 **near,
             }
-            return bool((visible_containers and visible_options and len(exact) == 1) or near.get("client_certificate_imei_near_input_candidate_unique") is True)
+            return bool(
+                (visible_containers and visible_options and len(exact) == 1)
+                or near.get("client_certificate_imei_near_input_candidate_unique") is True
+                or near.get("client_certificate_imei_near_input_exact_deduplicated_count") == 1
+                or near.get("client_certificate_imei_near_input_exact_match_count") == 1
+                or (
+                    near.get("client_certificate_imei_near_input_candidate_count") == 1
+                    and near.get("client_certificate_imei_near_input_candidate_unique") is True
+                )
+            )
         try:
             WebDriverWait(self.browser.driver, 10, poll_frequency=0.25).until(locate)
             completed = True
@@ -1452,25 +1497,39 @@ class SmsmHandler:
             "client_certificate_imei_near_input_candidate_unique": False,
             "client_certificate_imei_near_input_candidate_visible": False,
             "client_certificate_imei_suggestion_resolution_method": "unresolved",
+            "client_certificate_imei_near_input_horizontal_overlap_count": 0,
+            "client_certificate_imei_near_input_vertical_near_count": 0,
+            "client_certificate_imei_near_input_center_below_count": 0,
+            "client_certificate_imei_near_input_overlapping_rect_count": 0,
+            "client_certificate_imei_near_input_portal_candidate_count": 0,
+            "client_certificate_imei_near_input_direct_text_match_count": 0,
+            "client_certificate_imei_near_input_text_content_match_count": 0,
+            "client_certificate_imei_near_input_leaf_text_match_count": 0,
+            "client_certificate_imei_near_input_value_match_count": 0,
+            "client_certificate_imei_near_input_exact_raw_match_count": 0,
+            "client_certificate_imei_near_input_exact_deduplicated_count": 0,
+            "client_certificate_imei_near_input_nested_duplicate_count": 0,
+            "client_certificate_imei_near_input_deduplication_method": "unresolved",
         }
         try:
             observed = self.browser.driver.execute_script("""
                 const panel=arguments[0], input=arguments[1], expected=arguments[2];
                 const visible=e => { const r=e.getBoundingClientRect(), s=getComputedStyle(e); return !e.hidden && s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
                 const inputRect=input.getBoundingClientRect();
-                let root=input.parentElement;
-                for (let i=0; i<3 && root && !root.contains(input); i++) root=root.parentElement;
-                root=root || input.parentElement;
-                const all=[...root.querySelectorAll('div,button,span,li,[role="option"],[role="listitem"],[role="listbox"],[tabindex]')];
-                const candidates=all.filter(e => e !== input && !input.contains(e) && panel.contains(e));
-                const safeText=e => String(e.innerText || e.textContent || e.value || '').trim();
+                const all=[...document.body.querySelectorAll('div,button,span,li,[role="option"],[role="listitem"],[role="listbox"],[tabindex]')];
+                const direct=e => String(e.firstChild && e.firstChild.nodeType === 3 ? e.firstChild.textContent : '').replace(/[\\s\\u00a0]+/g,' ').trim();
+                const safeText=e => String(e.innerText || e.textContent || e.value || '').replace(/[\\s\\u00a0]+/g,' ').trim();
                 const notAction=e => !/^(保存|取消|save|cancel)$/i.test(safeText(e));
-                const visibleCandidates=candidates.filter(e => visible(e));
+                const inputAncestors=[]; for(let p=input.parentElement;p;p=p.parentElement) inputAncestors.push(p);
+                const candidates=all.filter(e => e !== input && !input.contains(e));
+                const geometric=candidates.filter(e => { const r=e.getBoundingClientRect(); const horizontal=r.right >= inputRect.left && r.left <= inputRect.right; const vertical=r.top - inputRect.bottom <= 160 && r.bottom >= inputRect.top - 8; return horizontal && vertical; });
+                const visibleCandidates=geometric.filter(e => visible(e));
                 const nonzero=visibleCandidates.filter(e => { const r=e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
-                const below=nonzero.filter(e => e.getBoundingClientRect().top >= inputRect.bottom);
+                const below=nonzero.filter(e => { const r=e.getBoundingClientRect(); return r.top >= inputRect.bottom - 8 || (r.top+r.bottom)/2 > (inputRect.top+inputRect.bottom)/2; });
                 const near=below.filter(e => e.getBoundingClientRect().top - inputRect.bottom <= 160);
-                const exact=near.filter(e => notAction(e) && safeText(e) === expected);
-                return { raw:candidates.length, visible:visibleCandidates.length, nonzero:nonzero.length, below:below.length, same_field:near.length, same_panel:near.length, exact:exact.length, candidate:exact.length, unique:exact.length === 1, visible_candidate:exact.length === 1, method:exact.length === 1 ? 'exact_text_near_input' : 'unresolved' };
+                const exact=near.filter(e => notAction(e) && !inputAncestors.includes(e) && (direct(e) === expected || safeText(e) === expected || String(e.value || '') === expected));
+                const dedup=exact.filter((e,i,a) => !a.some((other,j) => j<i && (other.contains(e) || e.contains(other) || (Math.abs(other.getBoundingClientRect().top-e.getBoundingClientRect().top)<3 && Math.abs(other.getBoundingClientRect().left-e.getBoundingClientRect().left)<3))));
+                return { raw:candidates.length, visible:visibleCandidates.length, nonzero:nonzero.length, below:below.length, same_field:near.length, same_panel:near.filter(e=>panel.contains(e)).length, exact:dedup.length, raw_exact:exact.length, unique:dedup.length === 1, candidate:dedup.length, visible_candidate:dedup.length === 1, method:dedup.length === 1 ? 'exact_text_near_input_portal' : 'unresolved', horizontal:geometric.length, vertical:near.length, center_below:below.length, overlap:geometric.length, portal:geometric.filter(e=>!panel.contains(e)).length, direct_match:exact.filter(e=>direct(e)===expected).length, content_match:exact.filter(e=>safeText(e)===expected).length, leaf_match:0, value_match:exact.filter(e=>String(e.value||'')===expected).length, raw_exact:exact.length, dedup_exact:dedup.length, nested_duplicate:exact.length-dedup.length, dedup_method:dedup.length ? 'leaf_text_and_geometry' : 'unresolved' };
             """, panel, input_element, imei) or {}
             mapping = {
                 "client_certificate_imei_near_input_raw_candidate_count": "raw",
@@ -1484,6 +1543,19 @@ class SmsmHandler:
                 "client_certificate_imei_near_input_candidate_unique": "unique",
                 "client_certificate_imei_near_input_candidate_visible": "visible_candidate",
                 "client_certificate_imei_suggestion_resolution_method": "method",
+                "client_certificate_imei_near_input_horizontal_overlap_count": "horizontal",
+                "client_certificate_imei_near_input_vertical_near_count": "vertical",
+                "client_certificate_imei_near_input_center_below_count": "center_below",
+                "client_certificate_imei_near_input_overlapping_rect_count": "overlap",
+                "client_certificate_imei_near_input_portal_candidate_count": "portal",
+                "client_certificate_imei_near_input_direct_text_match_count": "direct_match",
+                "client_certificate_imei_near_input_text_content_match_count": "content_match",
+                "client_certificate_imei_near_input_leaf_text_match_count": "leaf_match",
+                "client_certificate_imei_near_input_value_match_count": "value_match",
+                "client_certificate_imei_near_input_exact_raw_match_count": "raw_exact",
+                "client_certificate_imei_near_input_exact_deduplicated_count": "dedup_exact",
+                "client_certificate_imei_near_input_nested_duplicate_count": "nested_duplicate",
+                "client_certificate_imei_near_input_deduplication_method": "dedup_method",
             }
             return {**defaults, **{key: observed.get(source, defaults[key]) for key, source in mapping.items()}}
         except Exception:

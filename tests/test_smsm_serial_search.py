@@ -1657,6 +1657,19 @@ def test_imei_suggestion_near_input_fallback_accepts_exact_text_without_aria_con
         "unique": True,
         "visible_candidate": True,
         "method": "exact_text_near_input",
+        "horizontal": 1,
+        "vertical": 1,
+        "center_below": 1,
+        "overlap": 1,
+        "portal": 1,
+        "direct_match": 1,
+        "content_match": 1,
+        "leaf_match": 0,
+        "value_match": 0,
+        "raw_exact": 1,
+        "dedup_exact": 1,
+        "nested_duplicate": 0,
+        "dedup_method": "leaf_text_and_geometry",
     }
 
     class ImmediateWait:
