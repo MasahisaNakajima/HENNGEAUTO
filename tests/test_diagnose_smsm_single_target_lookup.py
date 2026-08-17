@@ -1848,6 +1848,28 @@ def test_edit_form_cli_accepts_unresolved_primary_input_without_forbidden_operat
     assert result["client_certificate_primary_input_resolution_required"] is True
 
 
+def test_edit_form_success_uses_marker_transition_without_strict_edit_state_or_visibility():
+    result = _edit_form_success_result(
+        client_certificate_edit_state_detected=False,
+        client_certificate_edit_form_visible=False,
+        client_certificate_edit_form_visibility_verified=False,
+        client_certificate_edit_form_wait_completed=False,
+        client_certificate_edit_form_candidate_count=0,
+        client_certificate_control_logical_group_count=0,
+    )
+
+    assert mod._client_certificate_edit_form_success(result, _edit_form_safe_operations()) is True
+
+
+def test_edit_form_success_keeps_forbidden_operation_as_failure():
+    result = _edit_form_success_result(client_certificate_edit_state_detected=False)
+
+    assert mod._client_certificate_edit_form_success(
+        result,
+        _edit_form_safe_operations(device_imei_send_keys_called=True),
+    ) is False
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
@@ -1855,7 +1877,6 @@ def test_edit_form_cli_accepts_unresolved_primary_input_without_forbidden_operat
         ("client_certificate_save_candidate_count", 2),
         ("client_certificate_cancel_candidate_count", 0),
         ("client_certificate_cancel_candidate_count", 2),
-        ("client_certificate_edit_state_detected", False),
         ("client_certificate_edit_transition_detected", False),
     ],
 )

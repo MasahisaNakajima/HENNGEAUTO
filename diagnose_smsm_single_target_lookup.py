@@ -2193,7 +2193,6 @@ def _client_certificate_edit_form_success(result: dict[str, object], operations:
         result.get("device_result_identity_verified") is True,
         result.get("other_settings_click_count") == 1,
         result.get("client_certificate_item_click_count") == 1,
-        result.get("client_certificate_edit_state_detected") is True,
         result.get("client_certificate_edit_transition_detected") is True,
         result.get("client_certificate_edit_marker_wait_completed") is True,
         result.get("client_certificate_edit_marker_last_snapshot_available") is True,
@@ -2297,6 +2296,7 @@ def _run_smsm_client_certificate_edit_form_only(args: list[str]) -> int:
                 "client_certificate_edit_click_started": "client_certificate_edit_form_only_click_edit",
                 "client_certificate_edit_click_called": "client_certificate_edit_form_only_click_edit",
                 "client_certificate_edit_state_wait_called": "client_certificate_edit_form_only_wait_edit_state",
+                "client_certificate_edit_marker_wait_called": "client_certificate_edit_form_only_wait_edit_state",
             }
             if key in stage_by_key:
                 current_stage = stage_by_key[key]
@@ -2304,7 +2304,11 @@ def _run_smsm_client_certificate_edit_form_only(args: list[str]) -> int:
         result = service.smsm.inspect_client_certificate_edit_form_only(context.target_serial, trace=trace_edit_form)
         if result.get("client_certificate_edit_click_completed") is True:
             last_completed_stage = "client_certificate_edit_form_only_click_edit"
-            if result.get("client_certificate_edit_form_wait_called") is True:
+            if result.get("client_certificate_edit_marker_wait_called") is True:
+                current_stage = "client_certificate_edit_form_only_wait_edit_state"
+                if result.get("client_certificate_edit_marker_wait_completed") is True:
+                    last_completed_stage = "client_certificate_edit_form_only_wait_edit_state"
+            elif result.get("client_certificate_edit_form_wait_called") is True:
                 current_stage = "client_certificate_edit_form_only_wait_edit_state"
                 if result.get("client_certificate_edit_form_wait_completed") is True:
                     last_completed_stage = "client_certificate_edit_form_only_wait_edit_state"
