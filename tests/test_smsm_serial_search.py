@@ -1681,12 +1681,13 @@ def test_client_certificate_input_and_expand_button_are_one_logical_control():
     assert state["client_certificate_selection_control_candidate_count"] == 1
 
 
-def test_edit_click_calls_edit_form_wait_once_and_merges_failed_result():
+def test_edit_click_calls_marker_wait_once_and_merges_result():
     handler = handler_for(type("Driver", (), {})())
     edit = DomNode("button", text="編集")
     edit.click_calls = 0
     edit.click = lambda: setattr(edit, "click_calls", edit.click_calls + 1)
     panel = DomNode("aside")
+    order = []
     handler.inspect_client_certificate_navigation_only = lambda _serial, trace=None: {
         "device_result_identity_verified": True,
         "device_result_selected": True,
@@ -1697,24 +1698,63 @@ def test_edit_click_calls_edit_form_wait_once_and_merges_failed_result():
         "panel": panel,
         "client_certificate_view_state_detected": True,
         "client_certificate_edit_state_detected": False,
+        "client_certificate_unconfigured_text_candidate_count": 1,
+        "client_certificate_edit_candidate_count": 1,
+        "client_certificate_save_candidate_count": 0,
+        "client_certificate_cancel_candidate_count": 0,
     }
     handler._certificate_edit_candidates = lambda _panel: [edit]
-    calls = []
-    handler._wait_for_client_certificate_edit_form = lambda **_kwargs: calls.append(_kwargs) or {
-        "client_certificate_edit_form_wait_called": True,
-        "client_certificate_edit_form_wait_completed": False,
-        "client_certificate_edit_form_wait_timeout": True,
-        "client_certificate_edit_form_candidate_count": 0,
-        "client_certificate_edit_state_detected": False,
-    }
+    def classify_after_edit(_panel):
+        return {"client_certificate_unconfigured_text_candidate_count": 0}
+
+    handler._classify_client_certificate_panel = classify_after_edit
+
+    def strict_wait_must_not_run(**_kwargs):
+        raise AssertionError("strict form wait must not run")
+
+    handler._wait_for_client_certificate_edit_form = strict_wait_must_not_run
+
+    def marker_wait(**kwargs):
+        order.append("marker_wait")
+        assert kwargs["panel"] is panel
+        return {
+            "panel": panel,
+            "client_certificate_edit_marker_wait_called": True,
+            "client_certificate_edit_marker_wait_completed": True,
+            "client_certificate_edit_marker_last_snapshot_available": True,
+            "client_certificate_edit_form_edit_candidate_count": 0,
+            "client_certificate_edit_form_save_candidate_count": 1,
+            "client_certificate_edit_form_cancel_candidate_count": 1,
+            "client_certificate_edit_form_control_candidate_count": 2,
+            "client_certificate_edit_state_detected": True,
+        }
+
+    handler._wait_for_client_certificate_edit_markers = marker_wait
 
     result = handler.inspect_client_certificate_edit_form_only("serial")
 
-    assert len(calls) == 1
     assert edit.click_calls == 1
-    assert result["client_certificate_edit_form_wait_called"] is True
-    assert result["client_certificate_edit_form_wait_completed"] is False
-    assert result["client_certificate_edit_form_wait_timeout"] is True
+    assert order == ["marker_wait"]
+    assert result["client_certificate_edit_marker_wait_called"] is True
+    assert result["client_certificate_edit_marker_wait_completed"] is True
+    assert result["client_certificate_after_snapshot_created"] is True
+    assert result["client_certificate_after_snapshot_uses_current_classification"] is True
+    assert result["client_certificate_after_snapshot_uses_before_fallback"] is False
+    assert result["client_certificate_before_unconfigured_count"] == 1
+    assert result["client_certificate_before_edit_count"] == 1
+    assert result["client_certificate_before_save_count"] == 0
+    assert result["client_certificate_before_cancel_count"] == 0
+    assert result["client_certificate_after_unconfigured_count"] == 0
+    assert result["client_certificate_after_edit_count"] == 0
+    assert result["client_certificate_after_save_count"] == 1
+    assert result["client_certificate_after_cancel_count"] == 1
+    assert result["client_certificate_after_control_element_count"] == 2
+    assert result["client_certificate_edit_transition_detected"] is True
+    assert result["client_certificate_edit_control_presence_verified"] is True
+    assert result["client_certificate_primary_input_resolved"] is False
+    assert result["client_certificate_selection_control_click_called"] is False
+    assert result["client_certificate_option_selection_called"] is False
+    assert result["client_certificate_cancel_click_called"] is False
 
 
 def test_edit_form_wait_reuses_same_panel_and_refreshes_children():
