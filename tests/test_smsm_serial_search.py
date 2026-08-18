@@ -1803,6 +1803,14 @@ def test_direct_save_wait_requires_two_stable_exact_value_observations():
         "client_certificate_reference_edit_control_candidate_count": 1,
         "client_certificate_view_state_detected": True,
     }
+    handler.inspect_saved_certificate_reference_state = lambda _panel, _imei: {
+        "client_certificate_saved_state_success_notice_exact_match": False,
+        "client_certificate_saved_state_reference_detected": True,
+        "client_certificate_saved_state_filename_value_present": True,
+        "client_certificate_saved_state_filename_exact_match": True,
+        "client_certificate_saved_state_verified": True,
+        "client_certificate_saved_state_resolution_method": "configured_reference_with_exact_filename",
+    }
 
     result = handler.wait_for_direct_save_result(panel, "123456789012345", timeout=1)
 
@@ -1812,6 +1820,62 @@ def test_direct_save_wait_requires_two_stable_exact_value_observations():
     assert result["client_certificate_direct_save_configured_value_exact_match"] is True
     assert result["client_certificate_direct_save_candidate_popup_disappeared"] is True
     assert result["client_certificate_direct_save_result_verified"] is True
+
+
+def test_saved_reference_state_accepts_complete_reference_without_success_notice():
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside", children={
+        "*": [
+            DomNode("span", text="クライアント証明書（デフォルト）"),
+            DomNode("span", text="123456789012345"),
+            DomNode("span", text="発行先: subject"),
+            DomNode("span", text="発行者: issuer"),
+            DomNode("span", text="有効期間: validity"),
+        ],
+        "button,a,[role='button'],[role='link']": [DomNode("button", text="編集"), DomNode("button", text="削除")],
+    })
+    handler._safe_find_elements_from = lambda element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
+
+    assert result["client_certificate_saved_state_success_notice_exact_match"] is False
+    assert result["client_certificate_saved_state_filename_exact_match"] is True
+    assert result["client_certificate_saved_state_certificate_details_complete"] is True
+    assert result["client_certificate_saved_state_reference_detected"] is True
+    assert result["client_certificate_saved_state_resolution_method"] == "configured_reference_with_exact_filename"
+
+
+@pytest.mark.parametrize("missing_text", ["発行者: issuer", "有効期間: validity"])
+def test_saved_reference_state_rejects_incomplete_reference(missing_text):
+    handler = handler_for(type("Driver", (), {})())
+    texts = ["クライアント証明書（デフォルト）", "123456789012345", "発行先: subject", "発行者: issuer", "有効期間: validity"]
+    texts.remove(missing_text)
+    panel = DomNode("aside", children={
+        "*": [DomNode("span", text=text) for text in texts],
+        "button,a,[role='button'],[role='link']": [DomNode("button", text="編集"), DomNode("button", text="削除")],
+    })
+    handler._safe_find_elements_from = lambda element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
+
+    assert result["client_certificate_saved_state_reference_detected"] is False
+
+
+def test_saved_reference_state_rejects_filename_mismatch():
+    handler = handler_for(type("Driver", (), {})())
+    panel = DomNode("aside", children={
+        "*": [DomNode("span", text=text) for text in ("クライアント証明書（デフォルト）", "123456789012346", "発行先: subject", "発行者: issuer", "有効期間: validity")],
+        "button,a,[role='button'],[role='link']": [DomNode("button", text="編集"), DomNode("button", text="削除")],
+    })
+    handler._safe_find_elements_from = lambda element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
+
+    assert result["client_certificate_saved_state_filename_exact_match"] is False
+    assert result["client_certificate_saved_state_reference_detected"] is False
 
 
 def test_imei_send_keys_once_and_exact_suggestion_is_observed_without_selection(monkeypatch):

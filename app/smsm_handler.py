@@ -1936,6 +1936,7 @@ class SmsmHandler:
             nonlocal iterations, stable, last
             iterations += 1
             current = self._classify_client_certificate_panel(panel) if panel is not None else {}
+            saved_state = self.inspect_saved_certificate_reference_state(panel, imei) if panel is not None else {}
             inputs = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input") if panel is not None else []
             values = [self._input_value(item) for item in inputs]
             configured = next((value for value in values if value == imei), "")
@@ -1943,7 +1944,7 @@ class SmsmHandler:
             last = {
                 "client_certificate_direct_save_wait_called": True,
                 "client_certificate_direct_save_wait_iteration_count": iterations,
-                "client_certificate_direct_save_success_notification_detected": False,
+                "client_certificate_direct_save_success_notification_detected": saved_state.get("client_certificate_saved_state_success_notice_exact_match", False),
                 "client_certificate_direct_save_error_detected": False,
                 "client_certificate_direct_save_validation_error_detected": False,
                 "client_certificate_direct_save_selection_required_error_detected": False,
@@ -1951,13 +1952,14 @@ class SmsmHandler:
                 "client_certificate_direct_save_save_disappeared": current.get("client_certificate_save_candidate_count", 0) == 0,
                 "client_certificate_direct_save_cancel_disappeared": current.get("client_certificate_cancel_candidate_count", 0) == 0,
                 "client_certificate_direct_save_edit_reappeared": current.get("client_certificate_reference_edit_control_candidate_count", 0) == 1,
-                "client_certificate_direct_save_reference_state_detected": current.get("client_certificate_view_state_detected") is True,
-                "client_certificate_direct_save_configured_value_present": bool(configured),
-                "client_certificate_direct_save_configured_value_exact_match": configured == imei,
-                "client_certificate_direct_save_candidate_popup_disappeared": not popup,
+                "client_certificate_direct_save_reference_state_detected": saved_state.get("client_certificate_saved_state_reference_detected") is True,
+                "client_certificate_direct_save_configured_value_present": saved_state.get("client_certificate_saved_state_filename_value_present") is True,
+                "client_certificate_direct_save_configured_value_exact_match": saved_state.get("client_certificate_saved_state_filename_exact_match") is True,
+                "client_certificate_direct_save_candidate_popup_disappeared": not popup and saved_state.get("client_certificate_saved_state_reference_detected") is True,
                 "client_certificate_direct_save_same_panel_retained": panel is not None,
                 "client_certificate_direct_save_navigation_detected": False,
             }
+            last.update(saved_state)
             stable_conditions = (
                 "client_certificate_direct_save_edit_state_ended",
                 "client_certificate_direct_save_save_disappeared",
@@ -1976,11 +1978,60 @@ class SmsmHandler:
             "client_certificate_direct_save_wait_called": True,
             "client_certificate_direct_save_wait_completed": completed,
             "client_certificate_direct_save_wait_timeout": not completed,
-            "client_certificate_direct_save_result_verified": completed,
+            "client_certificate_direct_save_result_verified": completed and last.get("client_certificate_saved_state_verified") is True,
             "client_certificate_direct_save_resolution_method": "reference_state_and_exact_value" if last.get("client_certificate_direct_save_reference_state_detected") else "edit_reappeared_and_exact_value" if last.get("client_certificate_direct_save_edit_reappeared") else "unresolved",
         })
         self._trace(trace, "client_certificate_direct_save_wait_completed", completed)
         return last
+
+    def inspect_saved_certificate_reference_state(self, panel, imei: str) -> dict[str, object]:
+        elements = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "*") if panel is not None else []
+        if panel is not None:
+            elements = [panel, *elements]
+        texts = [self._normalize_reference_text(self._safe_element_text_for_diagnostic(item)) for item in elements]
+        visible = [item for item in elements if self._safe_bool(item, "is_displayed") and self._dom_visibility_verified(item)]
+        visible_texts = [self._normalize_reference_text(self._safe_element_text_for_diagnostic(item)) for item in visible]
+        exact_default = [item for item, text in zip(visible, visible_texts) if text in {"クライアント証明書(デフォルト)", "クライアント証明書（デフォルト）"}]
+        filename = [item for item, text in zip(visible, visible_texts) if text == imei]
+        subject = [text for text in visible_texts if "発行先" in text and len(text) > len("発行先")]
+        issuer = [text for text in visible_texts if "発行者" in text and len(text) > len("発行者")]
+        validity = [text for text in visible_texts if "有効期間" in text and len(text) > len("有効期間")]
+        controls = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button'],[role='link']") if panel is not None else []
+        control_texts = [self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() for item in controls if self._safe_bool(item, "is_displayed") and self._safe_bool(item, "is_enabled")]
+        edit_count = sum(text in {"編集", "edit"} for text in control_texts)
+        delete_count = sum(text in {"削除", "delete", "remove"} for text in control_texts)
+        save_count = sum(text in {"保存", "save"} for text in control_texts)
+        cancel_count = sum(text in {"取消", "cancel"} for text in control_texts)
+        notices = [text for text in visible_texts if text == "クライアント証明書の設定を変更しました。" or "クライアント証明書の設定を変更しました。" in text]
+        filename_present = bool(filename)
+        reference_detected = bool(
+            len(exact_default) == 1 and filename_present and filename[0] is not None
+            and subject and issuer and validity and edit_count == 1 and delete_count == 1
+            and save_count == 0 and cancel_count == 0
+            and not any("設定なし" in text for text in visible_texts)
+        )
+        return {
+            "client_certificate_saved_state_success_notice_candidate_count": len(notices),
+            "client_certificate_saved_state_success_notice_unique": len(notices) == 1,
+            "client_certificate_saved_state_success_notice_visible": bool(notices),
+            "client_certificate_saved_state_success_notice_exact_match": len(notices) == 1,
+            "client_certificate_saved_state_filename_label_present": filename_present,
+            "client_certificate_saved_state_filename_value_present": filename_present,
+            "client_certificate_saved_state_filename_exact_match": len(filename) == 1,
+            "client_certificate_saved_state_filename_format_valid": len(filename) == 1 and bool(re.fullmatch(r"\d{15}", imei)),
+            "client_certificate_saved_state_filename_length_match": len(filename) == 1 and len(imei) == 15,
+            "client_certificate_saved_state_subject_present": bool(subject),
+            "client_certificate_saved_state_issuer_present": bool(issuer),
+            "client_certificate_saved_state_validity_present": bool(validity),
+            "client_certificate_saved_state_certificate_details_complete": bool(subject and issuer and validity),
+            "client_certificate_saved_state_edit_button_count": edit_count,
+            "client_certificate_saved_state_delete_button_count": delete_count,
+            "client_certificate_saved_state_save_button_count": save_count,
+            "client_certificate_saved_state_cancel_button_count": cancel_count,
+            "client_certificate_saved_state_reference_detected": reference_detected,
+            "client_certificate_saved_state_verified": reference_detected,
+            "client_certificate_saved_state_resolution_method": "configured_reference_with_exact_filename" if reference_detected else "unresolved",
+        }
 
     def click_exact_imei_suggestion_once_and_verify(self, panel, input_element, imei: str, trace=None, candidate=None) -> dict[str, object]:
         result = {

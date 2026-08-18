@@ -822,9 +822,10 @@ def _run_lookup(argv: list[str] | None = None) -> int:
     )
     inspect_settings_navigation_dom = args == ["--inspect-smsm-settings-navigation-dom"]
     inspect_device_client_certificate_dom = args == ["--inspect-smsm-device-client-certificate-dom"]
+    inspect_saved_certificate_state = args == ["--inspect-smsm-client-certificate-saved-state-only"]
     capture_smsm_certificate_route = args == ["--capture-smsm-certificate-navigation-route"]
     serial_search_workflow = trace_serial_input or trace_serial_search or inspect_serial_search_results_dom or trace_result_match or inspect_device_client_certificate_dom
-    if args not in ([], ["--lookup"], ["--trace-smsm-login"], ["--inspect-smsm-login-dom"], ["--inspect-smsm-device-search-dom"], ["--inspect-smsm-serial-search-dom"], ["--inspect-smsm-custom-search-control-dom"], ["--inspect-smsm-serial-input-dom"], ["--inspect-smsm-serial-search-results-dom"], ["--trace-smsm-serial-input"], ["--trace-smsm-serial-search"], ["--trace-smsm-result-match"], ["--inspect-smsm-client-certificate-upload-dom"], ["--inspect-smsm-client-certificate-add-form-dom"], ["--inspect-smsm-client-certificate-page"], ["--inspect-smsm-client-certificate-add-form-dom", "--manual-checkpoint-before-add"], ["--inspect-smsm-client-certificate-add-form-dom", "--manual-checkpoint-on-smsm-add-form-failure"], ["--inspect-smsm-settings-navigation-dom"], ["--inspect-smsm-device-client-certificate-dom"], ["--capture-smsm-certificate-navigation-route"]):
+    if args not in ([], ["--lookup"], ["--trace-smsm-login"], ["--inspect-smsm-login-dom"], ["--inspect-smsm-device-search-dom"], ["--inspect-smsm-serial-search-dom"], ["--inspect-smsm-custom-search-control-dom"], ["--inspect-smsm-serial-input-dom"], ["--inspect-smsm-serial-search-results-dom"], ["--trace-smsm-serial-input"], ["--trace-smsm-serial-search"], ["--trace-smsm-result-match"], ["--inspect-smsm-client-certificate-upload-dom"], ["--inspect-smsm-client-certificate-add-form-dom"], ["--inspect-smsm-client-certificate-page"], ["--inspect-smsm-client-certificate-add-form-dom", "--manual-checkpoint-before-add"], ["--inspect-smsm-client-certificate-add-form-dom", "--manual-checkpoint-on-smsm-add-form-failure"], ["--inspect-smsm-settings-navigation-dom"], ["--inspect-smsm-device-client-certificate-dom"], ["--capture-smsm-certificate-navigation-route"], ["--inspect-smsm-client-certificate-saved-state-only"]):
         return 1
 
     logger = AppLogger(_base_dir())
@@ -2346,6 +2347,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_smsm_device_detail_only(args)
     if "--inspect-smsm-client-certificate-navigation-only" in args:
         return _run_smsm_client_certificate_navigation_only(args)
+    if "--inspect-smsm-client-certificate-saved-state-only" in args:
+        return _run_smsm_client_certificate_saved_state_only(args)
     if "--inspect-smsm-client-certificate-edit-form-only" in args:
         return _run_smsm_client_certificate_edit_form_only(args)
     if "--inspect-smsm-client-certificate-primary-input-only" in args:
@@ -2375,6 +2378,72 @@ def main(argv: list[str] | None = None) -> int:
         return 35
     except ReopenFailedError:
         return 14
+
+
+def _run_smsm_client_certificate_saved_state_only(args: list[str]) -> int:
+    logger = AppLogger(_base_dir(), unique_log=True)
+    browser = None
+    observations = {
+        "client_certificate_saved_state_only": True,
+        "client_certificate_edit_click_called": False,
+        "client_certificate_edit_click_count": 0,
+        "client_certificate_saved_state_excel_write_called": False,
+        "client_certificate_saved_state_delete_click_called": False,
+        "client_certificate_saved_state_save_click_called": False,
+        "client_certificate_saved_state_cancel_click_called": False,
+    }
+    if args != ["--inspect-smsm-client-certificate-saved-state-only"]:
+        observations.update({"failed_stage": "cli_flag_validation", "exception_type": "ArgumentError"})
+        for key, value in observations.items():
+            _emit(logger, key, value)
+        return 2
+    try:
+        config = load_config()
+        targets = ExcelReader(str((config.get("excel", {}) or {}).get("path", ""))).read_targets(include_row_number=True)
+        if len(targets) != 1:
+            raise RuntimeError("対象Excel行が1件ではありません")
+        context = WorkflowContext(); context.config = config; context.set_target(targets[0])
+        browser = Browser(_base_dir(), config); browser.start()
+        service = ProductionWorkflowService(config=config, logger=logger, browser=browser, smsm_config=resolve_smsm_config(config))
+        service.smsm_login(context)
+        service.smsm_open_device_list(context)
+        service.smsm_search_device_by_serial(context, read_only=True)
+        navigation = service.smsm.inspect_client_certificate_navigation_only(context.target_serial)
+        panel = navigation.get("client_certificate_panel")
+        state = service.smsm.inspect_saved_certificate_reference_state(panel, normalize_imei(context.target_imei))
+        observations.update({key: value for key, value in navigation.items() if key != "client_certificate_panel"})
+        observations.update(state)
+        observations.update({
+            "client_certificate_edit_click_called": False,
+            "client_certificate_edit_click_count": 0,
+            "client_certificate_saved_state_excel_write_called": False,
+            "client_certificate_saved_state_delete_click_called": False,
+            "client_certificate_saved_state_save_click_called": False,
+            "client_certificate_saved_state_cancel_click_called": False,
+        })
+        success = all((
+            navigation.get("device_result_identity_verified") is True,
+            navigation.get("client_certificate_panel_unique") is True,
+            state.get("client_certificate_saved_state_verified") is True,
+        ))
+        observations["failed_stage"] = "" if success else "client_certificate_saved_state_verification"
+        observations["exception_type"] = ""
+        for key, value in observations.items():
+            safe = _safe_public_diagnostic_value(value)
+            if safe is not None:
+                _emit(logger, key, safe)
+        return 0 if success else 1
+    except Exception as exc:
+        observations.update({"failed_stage": "client_certificate_saved_state_verification", "exception_type": type(exc).__name__})
+        for key, value in observations.items():
+            _emit(logger, key, value)
+        return 1
+    finally:
+        if browser is not None:
+            try:
+                browser.quit()
+            except Exception:
+                pass
 
 
 def _run_smsm_client_certificate_navigation_only(args: list[str]) -> int:

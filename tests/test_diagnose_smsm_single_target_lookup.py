@@ -1753,6 +1753,23 @@ def test_client_certificate_navigation_only_option_selects_dedicated_route(monke
     assert calls == [["--inspect-smsm-client-certificate-navigation-only"]]
 
 
+def test_saved_state_only_option_selects_dedicated_route(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mod, "_run_smsm_client_certificate_saved_state_only", lambda args: calls.append(args) or 0)
+
+    assert mod.main(["--inspect-smsm-client-certificate-saved-state-only"]) == 0
+    assert calls == [["--inspect-smsm-client-certificate-saved-state-only"]]
+
+
+@pytest.mark.parametrize("conflict", ["--allow-device-binding", "--allow-excel-write", "--allow-certificate-upload", "--bind-existing-smsm-certificate"])
+def test_saved_state_only_rejects_conflicts_before_browser(monkeypatch, conflict):
+    started = []
+    monkeypatch.setattr(mod, "Browser", lambda *_args, **_kwargs: started.append(True))
+
+    assert mod._run_smsm_client_certificate_saved_state_only(["--inspect-smsm-client-certificate-saved-state-only", conflict]) == 2
+    assert started == []
+
+
 def test_client_certificate_edit_form_only_option_selects_dedicated_route(monkeypatch):
     calls = []
     monkeypatch.setattr(mod, "_run_smsm_client_certificate_edit_form_only", lambda args: calls.append(args) or 0)
