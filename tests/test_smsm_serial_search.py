@@ -1680,17 +1680,20 @@ def test_direct_save_target_refetch_clicks_current_save_once_without_candidate_o
 def test_direct_save_dismisses_visible_suggestion_once_before_refetch_and_save():
     handler = handler_for(type("Driver", (), {})())
     save = DomNode("button", text="保存")
-    label = DomNode("label", text="IMEI")
+    label = DomNode("label", text="クライアント証明書(デフォルト)")
+    primary = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    related = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    selection_id = DomNode("input", attrs={"type": "hidden", "value": "selection-id"})
     panel = DomNode("aside", children={
         "button,a,[role='button']": [save],
-        "label,h1,h2,h3,h4,h5,h6,p,span": [label],
-        "input": [DomNode("input", attrs={"type": "text", "value": "123456789012345"})],
+        "*": [label],
+        "input": [primary, related, selection_id],
     })
-    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, panel.children.get("*", []))
     handler._dom_visibility_probe = lambda _element: {"visible": True}
     snapshots = iter([
         {"client_certificate_direct_save_readiness_candidate_visible": True, "client_certificate_direct_save_readiness_primary_value_exact_match": True, "client_certificate_direct_save_readiness_related_exact_match_count": 0, "client_certificate_direct_save_readiness_selection_id_present": False, "client_certificate_direct_save_readiness_internal_value_resolution_method": "primary_value_only"},
-        {"client_certificate_direct_save_readiness_candidate_visible": False, "client_certificate_direct_save_readiness_primary_value_exact_match": True, "client_certificate_direct_save_readiness_related_exact_match_count": 0, "client_certificate_direct_save_readiness_selection_id_present": False, "client_certificate_direct_save_readiness_internal_value_resolution_method": "primary_value_only"},
+        {"client_certificate_direct_save_readiness_candidate_visible": False, "client_certificate_direct_save_readiness_primary_value_exact_match": True, "client_certificate_direct_save_readiness_related_exact_match_count": 1, "client_certificate_direct_save_readiness_selection_id_present": True, "client_certificate_direct_save_readiness_internal_value_present": True, "client_certificate_direct_save_readiness_internal_value_resolution_method": "primary_and_related_value_present"},
     ])
     handler.inspect_direct_save_readiness_without_selection = lambda *_args, **_kwargs: next(snapshots)
     handler._is_certificate_control_obscured = lambda _element: False
@@ -1703,6 +1706,57 @@ def test_direct_save_dismisses_visible_suggestion_once_before_refetch_and_save()
     assert result["device_binding_save_count"] == 1
     assert label.click_calls == 1
     assert save.click_calls == 1
+
+
+@pytest.mark.parametrize("labels", [[], [DomNode("label", text="クライアント証明書(デフォルト)"), DomNode("label", text="クライアント証明書(デフォルト)")]])
+def test_direct_save_does_not_save_when_default_label_is_not_unique(labels):
+    handler = handler_for(type("Driver", (), {})())
+    save = DomNode("button", text="保存")
+    panel = DomNode("aside", children={"button,a,[role='button']": [save], "*": labels})
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+    handler.inspect_direct_save_readiness_without_selection = lambda *_args, **_kwargs: {
+        "client_certificate_direct_save_readiness_candidate_visible": True,
+    }
+
+    result = handler.refetch_direct_save_target_and_click(panel, "123456789012345")
+
+    assert result["client_certificate_suggestion_blur_default_label_candidate_count"] == len(labels)
+    assert result["device_binding_save_called"] is False
+    assert save.click_calls == 0
+
+
+def test_direct_save_does_not_save_when_default_label_is_hidden():
+    handler = handler_for(type("Driver", (), {})())
+    save = DomNode("button", text="保存")
+    label = DomNode("label", text="クライアント証明書(デフォルト)", displayed=False)
+    panel = DomNode("aside", children={"button,a,[role='button']": [save], "*": [label]})
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler.inspect_direct_save_readiness_without_selection = lambda *_args, **_kwargs: {
+        "client_certificate_direct_save_readiness_candidate_visible": True,
+    }
+
+    result = handler.refetch_direct_save_target_and_click(panel, "123456789012345")
+
+    assert result["client_certificate_suggestion_blur_default_label_visible"] is False
+    assert result["device_binding_save_called"] is False
+
+
+@pytest.mark.parametrize("top_is_target, expected_obscured", [(False, True), (True, False)])
+def test_save_target_obscured_requires_element_from_point_to_be_target_or_child(monkeypatch, top_is_target, expected_obscured):
+    handler = handler_for(type("Driver", (), {})())
+    target = object()
+    top = target if top_is_target else object()
+    handler.browser.driver.execute_script = lambda *_args: top is target
+
+    assert handler._is_certificate_control_obscured(target) is expected_obscured
+
+
+def test_save_target_obscured_on_dom_probe_exception():
+    handler = handler_for(type("Driver", (), {})())
+    handler.browser.driver.execute_script = lambda *_args: (_ for _ in ()).throw(RuntimeError())
+
+    assert handler._is_certificate_control_obscured(object()) is True
 
 
 def test_direct_save_target_does_not_click_when_save_is_not_unique():
