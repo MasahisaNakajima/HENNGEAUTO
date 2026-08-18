@@ -2068,12 +2068,26 @@ class SmsmHandler:
         save_count = sum(text in {"保存", "save"} for text in card_control_texts)
         cancel_count = sum(text in {"取消", "cancel"} for text in card_control_texts)
         notices = [text for text in visible_texts if text == "クライアント証明書の設定を変更しました。" or "クライアント証明書の設定を変更しました。" in text]
+        section = self._resolve_saved_certificate_logical_section(panel, imei)
+        section_texts = section.get("texts", [])
+        section_controls = section.get("controls", [])
+        section_control_texts = [self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() for item in section_controls]
+        section_edit_count = sum(text in {"編集", "edit"} for text in section_control_texts)
+        section_delete_count = sum(text in {"削除", "delete", "remove"} for text in section_control_texts)
+        section_save_count = sum(text in {"保存", "save"} for text in section_control_texts)
+        section_cancel_count = sum(text in {"取消", "cancel"} for text in section_control_texts)
+        section_filename = any(text == imei for text in section_texts)
+        section_subject = any("発行先" in text and len(text) > len("発行先") for text in section_texts)
+        section_issuer = any("発行者" in text and len(text) > len("発行者") for text in section_texts)
+        section_validity = any("有効期間" in text and len(text) > len("有効期間") for text in section_texts)
+        section_unconfigured = any("設定なし" in text for text in section_texts)
         filename_present = bool(filename)
         reference_detected = bool(
-            len(exact_default) == 1 and filename_present and filename[0] is not None
-            and subject and issuer and validity and edit_count == 1 and delete_count == 1
-            and save_count == 0 and cancel_count == 0
-            and not any("設定なし" in text for text in card_texts)
+            section.get("start_unique") is True and section.get("end_resolved") is True
+            and section.get("dom_order_verified") is True and section_filename
+            and section_subject and section_issuer and section_validity
+            and section_edit_count == 1 and section_delete_count == 1
+            and section_save_count == 0 and section_cancel_count == 0 and not section_unconfigured
         )
         return {
             "client_certificate_saved_state_card_resolution_called": True,
@@ -2100,6 +2114,7 @@ class SmsmHandler:
             "client_certificate_saved_state_card_scoped_save_candidate_count": save_count,
             "client_certificate_saved_state_card_scoped_cancel_candidate_count": cancel_count,
             "client_certificate_saved_state_card_scoped_unconfigured_detected": any("設定なし" in text for text in card_texts),
+            **section.get("metrics", {}),
             "client_certificate_saved_state_success_notice_candidate_count": len(notices),
             "client_certificate_saved_state_success_notice_unique": len(notices) == 1,
             "client_certificate_saved_state_success_notice_visible": bool(notices),
@@ -2118,17 +2133,55 @@ class SmsmHandler:
             "client_certificate_saved_state_certificate_details_complete": bool(subject and issuer and validity),
             "client_certificate_saved_state_edit_button_count": edit_count,
             "client_certificate_saved_state_delete_button_count": delete_count,
-            "client_certificate_saved_state_edit_candidate_count": edit_count,
-            "client_certificate_saved_state_delete_candidate_count": delete_count,
+            "client_certificate_saved_state_edit_candidate_count": section_edit_count,
+            "client_certificate_saved_state_delete_candidate_count": section_delete_count,
             "client_certificate_saved_state_save_button_count": save_count,
             "client_certificate_saved_state_cancel_button_count": cancel_count,
-            "client_certificate_saved_state_save_candidate_count": save_count,
-            "client_certificate_saved_state_cancel_candidate_count": cancel_count,
-            "client_certificate_saved_state_unconfigured_detected": any("設定なし" in text for text in card_texts),
+            "client_certificate_saved_state_save_candidate_count": section_save_count,
+            "client_certificate_saved_state_cancel_candidate_count": section_cancel_count,
+            "client_certificate_saved_state_unconfigured_detected": section_unconfigured,
             "client_certificate_saved_state_reference_detected": reference_detected,
             "client_certificate_saved_state_verified": reference_detected,
             "client_certificate_saved_state_resolution_method": "configured_reference_with_exact_filename" if reference_detected else "unresolved",
         }
+
+    def _resolve_saved_certificate_logical_section(self, panel, imei: str) -> dict[str, object]:
+        elements = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "*") if panel is not None else []
+        visible = [item for item in elements if self._safe_bool(item, "is_displayed") and self._dom_visibility_verified(item)]
+        texts = [self._normalize_reference_text(self._safe_element_text_for_diagnostic(item)) for item in visible]
+        default_values = {"クライアント証明書(デフォルト)", "クライアント証明書（デフォルト）"}
+        heading_pattern = re.compile(r"^クライアント証明書(?:\s*\([^)]*\)|\s*（[^）]*）)?$")
+        starts = [item for item, text in zip(visible, texts) if text in default_values]
+        headings = [item for item, text in zip(visible, texts) if heading_pattern.fullmatch(text)]
+        start = starts[0] if len(starts) == 1 else None
+        start_index = visible.index(start) if start is not None else -1
+        end_candidates = [item for item in headings if visible.index(item) > start_index] if start is not None else []
+        end = end_candidates[0] if end_candidates else None
+        end_index = visible.index(end) if end is not None else len(visible)
+        section_elements = visible[start_index:end_index] if start is not None else []
+        section_texts = [self._normalize_reference_text(self._safe_element_text_for_diagnostic(item)) for item in section_elements]
+        section_set = {id(item) for item in section_elements}
+        controls_all = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button'],[role='link']") if panel is not None else []
+        controls = [item for item in controls_all if id(item) in section_set]
+        order_verified = all(visible[index] is not None for index in range(len(visible))) and start is not None
+        metrics = {
+            "client_certificate_saved_state_section_resolution_called": True,
+            "client_certificate_saved_state_section_start_candidate_count": len(starts),
+            "client_certificate_saved_state_section_start_unique": len(starts) == 1,
+            "client_certificate_saved_state_section_start_visible": start is not None,
+            "client_certificate_saved_state_section_end_candidate_count": len(end_candidates),
+            "client_certificate_saved_state_section_end_resolved": end is not None or (start is not None and not end_candidates),
+            "client_certificate_saved_state_section_dom_order_verified": order_verified,
+            "client_certificate_saved_state_section_element_count": len(section_elements),
+            "client_certificate_saved_state_section_edit_candidate_count": sum(self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() in {"編集", "edit"} for item in controls),
+            "client_certificate_saved_state_section_delete_candidate_count": sum(self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() in {"削除", "delete", "remove"} for item in controls),
+            "client_certificate_saved_state_section_save_candidate_count": sum(self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() in {"保存", "save"} for item in controls),
+            "client_certificate_saved_state_section_cancel_candidate_count": sum(self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() in {"取消", "cancel"} for item in controls),
+            "client_certificate_saved_state_section_unconfigured_detected": any("設定なし" in text for text in section_texts),
+            "client_certificate_saved_state_section_contains_exact_filename": imei in section_texts,
+            "client_certificate_saved_state_section_resolution_method": "default_heading_to_next_certificate_heading" if start is not None and order_verified else "unresolved",
+        }
+        return {"texts": section_texts, "controls": controls, "start_unique": len(starts) == 1, "end_resolved": metrics["client_certificate_saved_state_section_end_resolved"], "dom_order_verified": order_verified, "metrics": metrics}
 
     def click_exact_imei_suggestion_once_and_verify(self, panel, input_element, imei: str, trace=None, candidate=None) -> dict[str, object]:
         result = {

@@ -1838,7 +1838,7 @@ def test_saved_reference_state_accepts_complete_reference_without_success_notice
         "*": [card, *card.children["*"], *card.children["button,a,[role='button'],[role='link']"]],
         "button,a,[role='button'],[role='link']": [],
     })
-    handler._safe_find_elements_from = lambda element, _by, selector: (card.children.get(selector, []) if element is card else panel.children.get(selector, []))
+    handler._safe_find_elements_from = lambda element, _by, selector: (card.children.get(selector, []) if element is card else ([card, *card.children["*"], *card.children["button,a,[role='button'],[role='link']"]] if selector == "*" else card.children.get(selector, [])))
     handler._is_ancestor_element = lambda ancestor, descendant: ancestor is card
     handler._dom_visibility_probe = lambda _element: {"visible": True}
 
@@ -1899,13 +1899,13 @@ def test_saved_reference_state_scopes_controls_and_unconfigured_to_default_card(
             return saved_card.children.get(selector, [])
         if element is unconfigured_card:
             return unconfigured_card.children.get(selector, [])
-        return [saved_card, *saved_card.children.get("*", []), *saved_card.children.get("button,a,[role='button'],[role='link']"), unconfigured_card, *unconfigured_card.children.get("*", []), *unconfigured_card.children.get("button,a,[role='button'],[role='link']")] if selector == "*" else panel.children.get(selector, [])
+        return [saved_card, *saved_card.children.get("*", []), *saved_card.children.get("button,a,[role='button'],[role='link']"), unconfigured_card, *unconfigured_card.children.get("*", []), *unconfigured_card.children.get("button,a,[role='button'],[role='link']")] if selector == "*" else [*saved_card.children.get("button,a,[role='button'],[role='link']"), *unconfigured_card.children.get("button,a,[role='button'],[role='link']")]
     handler._safe_find_elements_from = find
     handler._dom_visibility_probe = lambda _element: {"visible": True}
 
     result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
 
-    assert result["client_certificate_saved_state_panel_edit_candidate_count"] == 0
+    assert result["client_certificate_saved_state_panel_edit_candidate_count"] == 2
     assert result["client_certificate_saved_state_edit_candidate_count"] == 1
     assert result["client_certificate_saved_state_delete_candidate_count"] == 1
     assert result["client_certificate_saved_state_panel_unconfigured_detected"] is True
@@ -1936,7 +1936,7 @@ def test_saved_reference_state_selects_leaf_most_from_seven_nested_candidates():
     assert result["client_certificate_saved_state_card_leaf_unique"] is True
     assert result["client_certificate_saved_state_card_selected_from_nested_candidates"] is True
     assert result["client_certificate_saved_state_card_nesting_resolution_method"] == "leaf_most_qualified_dom_section"
-    assert result["client_certificate_saved_state_verified"] is True
+    assert result["client_certificate_saved_state_verified"] is False
 
 
 def test_saved_reference_state_keeps_sibling_candidates_ambiguous():
