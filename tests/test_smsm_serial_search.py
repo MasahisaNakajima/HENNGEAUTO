@@ -1912,6 +1912,47 @@ def test_saved_reference_state_scopes_controls_and_unconfigured_to_default_card(
     assert result["client_certificate_saved_state_verified"] is True
 
 
+def test_saved_reference_state_selects_leaf_most_from_seven_nested_candidates():
+    handler = handler_for(type("Driver", (), {})())
+    candidates = [DomNode("section", text="クライアント証明書（デフォルト） 123456789012345 発行先: subject 発行者: issuer 有効期間: validity") for _ in range(7)]
+    leaf = candidates[-1]
+    leaf.children = {
+        "*": [DomNode("span", text="クライアント証明書（デフォルト）"), DomNode("span", text="123456789012345"), DomNode("span", text="発行先: subject"), DomNode("span", text="発行者: issuer"), DomNode("span", text="有効期間: validity")],
+        "button,a,[role='button'],[role='link']": [DomNode("button", text="編集"), DomNode("button", text="削除")],
+    }
+    panel = DomNode("aside", children={"*": candidates, "button,a,[role='button'],[role='link']": []})
+    handler._safe_find_elements_from = lambda element, _by, selector: leaf.children.get(selector, []) if element is leaf else panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+    handler._is_ancestor_element = lambda ancestor, descendant: candidates.index(ancestor) < candidates.index(descendant)
+
+    result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
+
+    assert result["client_certificate_saved_state_card_raw_candidate_count"] == 7
+    assert result["client_certificate_saved_state_card_qualified_candidate_count"] == 7
+    assert result["client_certificate_saved_state_card_deduplicated_candidate_count"] == 7
+    assert result["client_certificate_saved_state_card_nested_outer_candidate_count"] == 6
+    assert result["client_certificate_saved_state_card_leaf_candidate_count"] == 1
+    assert result["client_certificate_saved_state_card_leaf_unique"] is True
+    assert result["client_certificate_saved_state_card_selected_from_nested_candidates"] is True
+    assert result["client_certificate_saved_state_card_nesting_resolution_method"] == "leaf_most_qualified_dom_section"
+    assert result["client_certificate_saved_state_verified"] is True
+
+
+def test_saved_reference_state_keeps_sibling_candidates_ambiguous():
+    handler = handler_for(type("Driver", (), {})())
+    candidates = [DomNode("section", text="クライアント証明書（デフォルト） 123456789012345 発行先: subject 発行者: issuer 有効期間: validity") for _ in range(2)]
+    panel = DomNode("aside", children={"*": candidates, "button,a,[role='button'],[role='link']": []})
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+    handler._is_ancestor_element = lambda _ancestor, _descendant: False
+
+    result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
+
+    assert result["client_certificate_saved_state_card_leaf_candidate_count"] == 2
+    assert result["client_certificate_saved_state_card_leaf_unique"] is False
+    assert result["client_certificate_saved_state_verified"] is False
+
+
 def test_imei_send_keys_once_and_exact_suggestion_is_observed_without_selection(monkeypatch):
     handler = handler_for(type("Driver", (), {})())
     input_node = DomNode("input", attrs={"type": "text", "tabindex": "0"})

@@ -2018,7 +2018,23 @@ class SmsmHandler:
         for candidate in card_candidates:
             if not any(candidate is existing or candidate == existing for existing in deduplicated_cards):
                 deduplicated_cards.append(candidate)
-        card = deduplicated_cards[0] if len(deduplicated_cards) == 1 else None
+        relation_called = bool(deduplicated_cards)
+        relation_completed = False
+        nested_outer = set()
+        relation_failed = False
+        if deduplicated_cards:
+            try:
+                for outer in deduplicated_cards:
+                    for inner in deduplicated_cards:
+                        if outer is inner or outer == inner:
+                            continue
+                        if self._is_ancestor_element(outer, inner):
+                            nested_outer.add(id(outer))
+                relation_completed = True
+            except Exception:
+                relation_failed = True
+        leaf_cards = [candidate for candidate in deduplicated_cards if id(candidate) not in nested_outer] if relation_completed else []
+        card = leaf_cards[0] if len(leaf_cards) == 1 else None
         card_elements = self._safe_find_elements_from(card, By.CSS_SELECTOR, "*") if card is not None else []
         if card is not None:
             card_elements = [card, *card_elements]
@@ -2051,10 +2067,17 @@ class SmsmHandler:
             "client_certificate_saved_state_card_raw_candidate_count": len(card_candidates),
             "client_certificate_saved_state_card_qualified_candidate_count": len(card_candidates),
             "client_certificate_saved_state_card_deduplicated_candidate_count": len(deduplicated_cards),
-            "client_certificate_saved_state_card_unique": len(deduplicated_cards) == 1,
+            "client_certificate_saved_state_card_unique": len(leaf_cards) == 1,
             "client_certificate_saved_state_card_contains_default_label": bool(exact_default),
             "client_certificate_saved_state_card_contains_exact_filename": len(filename) == 1,
-            "client_certificate_saved_state_card_resolution_method": "default_label_and_exact_filename_section" if len(deduplicated_cards) == 1 else "unresolved",
+            "client_certificate_saved_state_card_resolution_method": "default_label_and_exact_filename_section" if len(leaf_cards) == 1 else "unresolved",
+            "client_certificate_saved_state_card_ancestor_relation_check_called": relation_called,
+            "client_certificate_saved_state_card_ancestor_relation_check_completed": relation_completed and not relation_failed,
+            "client_certificate_saved_state_card_nested_outer_candidate_count": len(nested_outer),
+            "client_certificate_saved_state_card_leaf_candidate_count": len(leaf_cards),
+            "client_certificate_saved_state_card_leaf_unique": len(leaf_cards) == 1,
+            "client_certificate_saved_state_card_selected_from_nested_candidates": len(leaf_cards) == 1 and len(deduplicated_cards) > 1,
+            "client_certificate_saved_state_card_nesting_resolution_method": "leaf_most_qualified_dom_section" if len(leaf_cards) == 1 and len(deduplicated_cards) > 1 else "unresolved",
             "client_certificate_saved_state_success_notice_candidate_count": len(notices),
             "client_certificate_saved_state_success_notice_unique": len(notices) == 1,
             "client_certificate_saved_state_success_notice_visible": bool(notices),
