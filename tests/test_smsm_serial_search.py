@@ -1654,7 +1654,7 @@ def test_direct_save_readiness_allows_primary_value_only():
     assert result["client_certificate_primary_input_click_called"] is False
 
 
-def test_direct_save_target_refetch_clicks_current_save_once_without_candidate_or_cancel():
+def test_direct_save_target_refetch_does_not_save_without_successful_candidate_observation():
     handler = handler_for(type("Driver", (), {})())
     save = DomNode("button", text="保存")
     cancel = DomNode("button", text="取消")
@@ -1669,11 +1669,11 @@ def test_direct_save_target_refetch_clicks_current_save_once_without_candidate_o
     assert result["client_certificate_direct_save_target_unique"] is True
     assert result["client_certificate_direct_save_target_attached"] is True
     assert result["client_certificate_direct_save_target_nonzero_rect"] is True
-    assert result["device_binding_save_called"] is True
-    assert result["device_binding_save_count"] == 1
+    assert result["device_binding_save_called"] is False
+    assert result["device_binding_save_count"] == 0
     assert result["device_binding_save_retry_count"] == 0
-    assert result["device_binding_save_completed"] is True
-    assert save.click_calls == 1
+    assert result["device_binding_save_completed"] is False
+    assert save.click_calls == 0
     assert cancel.click_calls == 0
 
 
@@ -1698,8 +1698,21 @@ def test_direct_save_dismisses_visible_suggestion_once_before_refetch_and_save()
     ])
     handler.inspect_direct_save_readiness_without_selection = lambda *_args, **_kwargs: next(snapshots)
     handler._is_certificate_control_obscured = lambda _element: False
+    handler._near_input_suggestion_snapshot = lambda *_args: {
+        "client_certificate_imei_near_input_exact_deduplicated_count": 0,
+        "client_certificate_imei_near_input_candidate_count": 0,
+        "client_certificate_imei_near_input_candidate_visible": False,
+    }
+    suggestion = {
+        "client_certificate_imei_suggestion_wait_completed": True,
+        "client_certificate_imei_near_input_candidate_count": 1,
+        "client_certificate_imei_near_input_candidate_unique": True,
+        "client_certificate_imei_near_input_candidate_visible": True,
+        "client_certificate_imei_suggestion_resolution_method": "exact_text_near_input_portal",
+        "client_certificate_imei_near_input_exact_deduplicated_count": 1,
+    }
 
-    result = handler.refetch_direct_save_target_and_click(panel, "123456789012345")
+    result = handler.refetch_direct_save_target_and_click(panel, "123456789012345", suggestion)
 
     assert result["client_certificate_suggestion_escape_count"] == 1
     assert result["client_certificate_suggestion_escape_completed"] is True

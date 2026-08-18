@@ -2313,8 +2313,11 @@ def _run_smsm_client_certificate_imei_direct_save_only(args: list[str]) -> int:
         if not all(result.get(key) is True if key != "client_certificate_direct_save_readiness_related_exact_match_count" else result.get(key, 0) >= 1 for key in required): raise RuntimeError("保存前内部値条件失敗")
         complete(current_stage)
         advance("client_certificate_direct_save_only_refetch_save")
-        save_result = service.smsm.refetch_direct_save_target_and_click(panel, target_imei); result.update(save_result)
-        if not save_result.get("device_binding_save_completed"): raise RuntimeError("保存クリック失敗")
+        save_result = service.smsm.refetch_direct_save_target_and_click(panel, target_imei, imei_result); result.update(save_result)
+        if not save_result.get("device_binding_save_completed"):
+            result["failed_stage"] = save_result.get("client_certificate_direct_save_failure_stage", "client_certificate_direct_save_only_escape")
+            result["client_certificate_direct_save_failure_reason"] = save_result.get("client_certificate_direct_save_failure_reason", "unresolved")
+            raise RuntimeError("保存クリック失敗")
         complete(current_stage)
         advance("client_certificate_direct_save_only_click_save")
         complete(current_stage)

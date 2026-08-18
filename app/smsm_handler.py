@@ -1651,7 +1651,7 @@ class SmsmHandler:
         self._trace(trace, "client_certificate_direct_save_readiness_inspection_completed", True)
         return result
 
-    def refetch_direct_save_target_and_click(self, panel, imei: str, trace=None) -> dict[str, object]:
+    def refetch_direct_save_target_and_click(self, panel, imei: str, suggestion: dict[str, object] | None = None, trace=None) -> dict[str, object]:
         controls = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button']") if panel is not None else []
         saves = [item for item in controls if self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)) == "保存"]
         cancels = [item for item in controls if self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)) == "取消"]
@@ -1693,6 +1693,9 @@ class SmsmHandler:
             "client_certificate_suggestion_escape_wait_completed": False,
             "client_certificate_suggestion_escape_wait_iteration_count": 0,
             "client_certificate_suggestion_escape_wait_timeout": False,
+            "client_certificate_suggestion_escape_post_scan_called": False,
+            "client_certificate_suggestion_escape_post_exact_candidate_count": 0,
+            "client_certificate_suggestion_escape_post_candidate_visible": False,
             "client_certificate_suggestion_visible_before_escape": False,
             "client_certificate_suggestion_visible_after_escape": False,
             "client_certificate_suggestion_disappeared_after_escape": False,
@@ -1731,11 +1734,32 @@ class SmsmHandler:
             "client_certificate_direct_save_target_inside_edit_panel",
         )):
             return result
-        before = self.inspect_direct_save_readiness_without_selection(panel, None, imei, trace=trace)
-        suggestion_was_visible = before.get("client_certificate_direct_save_readiness_candidate_visible") is True
+        primary_state = self.inspect_primary_client_certificate_input(panel)
+        primary_candidates = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input,textarea,[role='combobox'],[contenteditable='true']")
+        primary_candidates = [item for item in primary_candidates if self._safe_bool(item, "is_displayed") and self._safe_bool(item, "is_enabled") and str(self._safe_attribute(item, "type") or "").casefold() != "hidden"]
+        input_element = primary_candidates[0] if len(primary_candidates) == 1 else None
+        near_before = suggestion or (self._near_input_suggestion_snapshot(panel, input_element, imei) if input_element is not None else {})
+        suggestion_was_visible = bool(
+            near_before.get("client_certificate_imei_suggestion_wait_completed") is True
+            and near_before.get("client_certificate_imei_near_input_candidate_count") == 1
+            and near_before.get("client_certificate_imei_near_input_candidate_unique") is True
+            and near_before.get("client_certificate_imei_near_input_candidate_visible") is True
+            and near_before.get("client_certificate_imei_suggestion_resolution_method") == "exact_text_near_input_portal"
+        )
+        if near_before.get("client_certificate_imei_suggestion_wait_completed") is True and not suggestion_was_visible:
+            result["client_certificate_direct_save_failure_reason"] = "escape_not_required_inconsistent_with_visible_candidate"
+            result["client_certificate_direct_save_failure_stage"] = "client_certificate_direct_save_only_escape_needed"
+            return result
+        if near_before.get("client_certificate_imei_suggestion_wait_completed") is not True:
+            return result
         if suggestion_was_visible:
-            result.update(self._dismiss_imei_suggestion_with_escape(panel, imei, before, trace=trace))
+            before = self.inspect_direct_save_readiness_without_selection(panel, input_element, imei, near_before, trace=trace)
+            result.update(self._dismiss_imei_suggestion_with_escape(panel, imei, before, input_element=input_element, trace=trace))
             if not all(result[key] for key in (
+                "client_certificate_suggestion_escape_needed",
+                "client_certificate_suggestion_escape_active_element_verified",
+                "client_certificate_suggestion_escape_called",
+                "client_certificate_suggestion_escape_count",
                 "client_certificate_suggestion_escape_completed",
                 "client_certificate_suggestion_disappeared_after_escape",
                 "client_certificate_direct_save_value_preserved_after_escape",
@@ -1743,6 +1767,19 @@ class SmsmHandler:
                 "client_certificate_direct_save_selection_id_preserved_after_escape",
                 "client_certificate_direct_save_internal_value_preserved_after_escape",
             )):
+                if not result.get("client_certificate_suggestion_escape_active_element_verified"):
+                    result["client_certificate_direct_save_failure_reason"] = "escape_active_element_mismatch"
+                elif result.get("client_certificate_suggestion_escape_called") and not result.get("client_certificate_suggestion_escape_completed"):
+                    result["client_certificate_direct_save_failure_reason"] = "escape_send_failed"
+                elif result.get("client_certificate_suggestion_escape_completed") and not result.get("client_certificate_suggestion_disappeared_after_escape"):
+                    result["client_certificate_direct_save_failure_reason"] = "candidate_popup_remained_after_escape"
+                elif not result.get("client_certificate_direct_save_value_preserved_after_escape"):
+                    result["client_certificate_direct_save_failure_reason"] = "input_value_changed_after_escape"
+                elif not result.get("client_certificate_direct_save_related_value_preserved_after_escape"):
+                    result["client_certificate_direct_save_failure_reason"] = "related_value_missing_after_escape"
+                elif not result.get("client_certificate_direct_save_selection_id_preserved_after_escape"):
+                    result["client_certificate_direct_save_failure_reason"] = "selection_id_missing_after_escape"
+                result["client_certificate_direct_save_failure_stage"] = "client_certificate_direct_save_only_escape"
                 return result
         current_saves = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button']")
         current_saves = [item for item in current_saves if self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)) == "保存"]
@@ -1771,7 +1808,7 @@ class SmsmHandler:
         self._trace(trace, "device_binding_save_completed", True)
         return result
 
-    def _dismiss_imei_suggestion_with_escape(self, panel, imei: str, before: dict[str, object], trace=None) -> dict[str, object]:
+    def _dismiss_imei_suggestion_with_escape(self, panel, imei: str, before: dict[str, object], input_element=None, trace=None) -> dict[str, object]:
         result = {
             "client_certificate_suggestion_escape_needed": True,
             "client_certificate_suggestion_escape_active_element_verified": False,
@@ -1784,6 +1821,9 @@ class SmsmHandler:
             "client_certificate_suggestion_escape_wait_completed": False,
             "client_certificate_suggestion_escape_wait_iteration_count": 0,
             "client_certificate_suggestion_escape_wait_timeout": False,
+            "client_certificate_suggestion_escape_post_scan_called": False,
+            "client_certificate_suggestion_escape_post_exact_candidate_count": 0,
+            "client_certificate_suggestion_escape_post_candidate_visible": False,
             "client_certificate_suggestion_visible_before_escape": True,
             "client_certificate_suggestion_visible_after_escape": True,
             "client_certificate_suggestion_disappeared_after_escape": False,
@@ -1793,12 +1833,9 @@ class SmsmHandler:
             "client_certificate_direct_save_internal_value_preserved_after_escape": False,
         }
         primary = self.inspect_primary_client_certificate_input(panel)
-        inputs = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input,textarea,[role='combobox'],[contenteditable='true']")
-        eligible = [item for item in inputs if self._safe_bool(item, "is_displayed") and self._safe_bool(item, "is_enabled") and str(self._safe_attribute(item, "type") or "").casefold() != "hidden"]
-        if len(eligible) != 1 or primary.get("client_certificate_primary_input_resolved") is not True:
+        if input_element is None:
             return result
-        input_element = eligible[0]
-        if self._input_value(input_element) != imei:
+        if primary.get("client_certificate_primary_input_resolved") is not True or self._input_value(input_element) != imei:
             return result
         try:
             active = bool(self.browser.driver.execute_script("return document.activeElement === arguments[0] || arguments[0].contains(document.activeElement);", input_element))
@@ -1814,24 +1851,36 @@ class SmsmHandler:
             result["client_certificate_suggestion_escape_completed"] = True
         except Exception as exc:
             result["client_certificate_suggestion_escape_exception_type"] = type(exc).__name__
+            result["client_certificate_direct_save_failure_reason"] = "escape_send_failed"
             return result
         def popup_gone(_driver):
-            snapshot = self.inspect_direct_save_readiness_without_selection(panel, input_element, imei, trace=trace)
-            result["client_certificate_suggestion_visible_after_escape"] = snapshot.get("client_certificate_direct_save_readiness_candidate_visible") is True
+            snapshot = self._near_input_suggestion_snapshot(panel, input_element, imei)
+            result["client_certificate_suggestion_escape_post_scan_called"] = True
+            result["client_certificate_suggestion_escape_post_exact_candidate_count"] = snapshot.get("client_certificate_imei_near_input_exact_deduplicated_count", 0)
+            result["client_certificate_suggestion_escape_post_candidate_visible"] = snapshot.get("client_certificate_imei_near_input_candidate_visible") is True
+            result["client_certificate_suggestion_visible_after_escape"] = result["client_certificate_suggestion_escape_post_candidate_visible"]
             result["client_certificate_suggestion_escape_wait_iteration_count"] += 1
-            return snapshot if not result["client_certificate_suggestion_visible_after_escape"] else False
+            return snapshot if not result["client_certificate_suggestion_escape_post_candidate_visible"] else False
         result["client_certificate_suggestion_escape_wait_called"] = True
         try:
             after = WebDriverWait(self.browser.driver, 5, poll_frequency=0.25).until(popup_gone)
             result["client_certificate_suggestion_escape_wait_completed"] = True
         except TimeoutException:
             result["client_certificate_suggestion_escape_wait_timeout"] = True
+            result["client_certificate_direct_save_failure_reason"] = "candidate_popup_remained_after_escape"
             return result
         result["client_certificate_suggestion_disappeared_after_escape"] = True
+        after = self.inspect_direct_save_readiness_without_selection(panel, input_element, imei, trace=trace)
         result["client_certificate_direct_save_value_preserved_after_escape"] = after.get("client_certificate_direct_save_readiness_primary_value_exact_match") is True
         result["client_certificate_direct_save_related_value_preserved_after_escape"] = after.get("client_certificate_direct_save_readiness_related_exact_match_count", 0) >= 1
         result["client_certificate_direct_save_selection_id_preserved_after_escape"] = after.get("client_certificate_direct_save_readiness_selection_id_present") is True
         result["client_certificate_direct_save_internal_value_preserved_after_escape"] = after.get("client_certificate_direct_save_readiness_internal_value_present") is True and after.get("client_certificate_direct_save_readiness_internal_value_resolution_method") != "unresolved"
+        if not result["client_certificate_direct_save_related_value_preserved_after_escape"]:
+            result["client_certificate_direct_save_failure_reason"] = "related_value_missing_after_escape"
+        elif not result["client_certificate_direct_save_selection_id_preserved_after_escape"]:
+            result["client_certificate_direct_save_failure_reason"] = "selection_id_missing_after_escape"
+        elif not result["client_certificate_direct_save_internal_value_preserved_after_escape"]:
+            result["client_certificate_direct_save_failure_reason"] = "input_value_changed_after_escape"
         return result
 
     def _refetch_default_certificate_blur_target(self, panel) -> tuple[list[object], dict[str, object]]:
