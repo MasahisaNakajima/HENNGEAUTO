@@ -13,7 +13,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import JavascriptException, StaleElementReferenceException, TimeoutException, WebDriverException
+from selenium.common.exceptions import ElementClickInterceptedException, JavascriptException, StaleElementReferenceException, TimeoutException, WebDriverException
 from app.smsm_config import SMSM_BASE_URL, SmsmConfig, password_contains_unsafe_syntax
 from app.imei_normalizer import normalize_imei
 
@@ -1673,6 +1673,16 @@ class SmsmHandler:
             "device_binding_save_completed": False,
             "device_binding_save_retry_count": 0,
             "device_binding_save_exception_type": "",
+            "client_certificate_suggestion_blur_candidate_count": 0,
+            "client_certificate_suggestion_blur_click_called": False,
+            "client_certificate_suggestion_blur_click_count": 0,
+            "client_certificate_suggestion_blur_completed": False,
+            "client_certificate_suggestion_blur_timeout": False,
+            "client_certificate_suggestion_blur_primary_value_maintained": False,
+            "client_certificate_suggestion_blur_related_value_maintained": False,
+            "client_certificate_suggestion_blur_selection_id_maintained": False,
+            "client_certificate_suggestion_blur_internal_value_maintained": False,
+            "client_certificate_direct_save_target_unobscured": False,
         }
         if len(saves) != 1 or (len(cancels) == 1 and saves[0] is cancels[0]):
             return result
@@ -1694,17 +1704,90 @@ class SmsmHandler:
             "client_certificate_direct_save_target_inside_edit_panel",
         )):
             return result
+        before = self.inspect_direct_save_readiness_without_selection(panel, None, imei, trace=trace)
+        suggestion_was_visible = before.get("client_certificate_direct_save_readiness_candidate_visible") is True
+        if suggestion_was_visible:
+            safe = self._find_safe_certificate_blur_target(panel)
+            result["client_certificate_suggestion_blur_candidate_count"] = len(safe)
+            if len(safe) != 1:
+                return result
+            safe[0].click()
+            result["client_certificate_suggestion_blur_click_called"] = True
+            result["client_certificate_suggestion_blur_click_count"] = 1
+            def popup_gone(_driver):
+                snapshot = self.inspect_direct_save_readiness_without_selection(panel, None, imei, trace=trace)
+                return snapshot if snapshot.get("client_certificate_direct_save_readiness_candidate_visible") is not True else False
+            try:
+                after = WebDriverWait(self.browser.driver, 5, poll_frequency=0.25).until(popup_gone)
+                result["client_certificate_suggestion_blur_completed"] = True
+            except TimeoutException:
+                result["client_certificate_suggestion_blur_timeout"] = True
+                return result
+            result["client_certificate_suggestion_blur_primary_value_maintained"] = after.get("client_certificate_direct_save_readiness_primary_value_exact_match") is True
+            result["client_certificate_suggestion_blur_related_value_maintained"] = after.get("client_certificate_direct_save_readiness_related_exact_match_count", 0) == before.get("client_certificate_direct_save_readiness_related_exact_match_count", 0)
+            result["client_certificate_suggestion_blur_selection_id_maintained"] = after.get("client_certificate_direct_save_readiness_selection_id_present") is before.get("client_certificate_direct_save_readiness_selection_id_present")
+            result["client_certificate_suggestion_blur_internal_value_maintained"] = after.get("client_certificate_direct_save_readiness_internal_value_resolution_method") == before.get("client_certificate_direct_save_readiness_internal_value_resolution_method")
+            if not all(result[key] for key in (
+                "client_certificate_suggestion_blur_primary_value_maintained",
+                "client_certificate_suggestion_blur_related_value_maintained",
+                "client_certificate_suggestion_blur_selection_id_maintained",
+                "client_certificate_suggestion_blur_internal_value_maintained",
+            )):
+                return result
+        current_saves = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button']")
+        current_saves = [item for item in current_saves if self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)) == "保存"]
+        if len(current_saves) != 1:
+            return result
+        target = current_saves[0]
+        result["client_certificate_direct_save_target_unobscured"] = not suggestion_was_visible or not self._is_certificate_control_obscured(target)
+        if not result["client_certificate_direct_save_target_unobscured"]:
+            return result
         result["device_binding_save_called"] = True
         result["device_binding_save_count"] = 1
         result["device_binding_save_started"] = True
         try:
             target.click()
+        except ElementClickInterceptedException:
+            result["device_binding_save_exception_type"] = "save_click_intercepted"
+            return result
         except Exception as exc:
             result["device_binding_save_exception_type"] = type(exc).__name__
             return result
         result["device_binding_save_completed"] = True
         self._trace(trace, "device_binding_save_completed", True)
         return result
+
+    def _find_safe_certificate_blur_target(self, panel) -> list[object]:
+        elements = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "label,h1,h2,h3,h4,h5,h6,p,span")
+        excluded_names = {"保存", "取消", "戻る", "閉じる", "save", "cancel", "back", "close"}
+        safe = []
+        for element in elements:
+            tag = self._safe_tag(element)
+            role = str(self._safe_attribute(element, "role") or "").casefold()
+            text = self._normalize_navigation_name(self._safe_element_text_for_diagnostic(element))
+            if tag in {"input", "button", "a"} or role in {"button", "option", "link"} or text.casefold() in excluded_names:
+                continue
+            if not text or not self._safe_bool(element, "is_displayed") or not self._safe_bool(element, "is_enabled"):
+                continue
+            if self._is_certificate_suggestion_element(element) or self._is_clickable_certificate_control(element):
+                continue
+            safe.append(element)
+        return safe
+
+    def _is_certificate_suggestion_element(self, element) -> bool:
+        role = str(self._safe_attribute(element, "role") or "").casefold()
+        aria = str(self._safe_attribute(element, "aria-autocomplete") or "").casefold()
+        return role in {"option", "listbox"} or aria == "list"
+
+    def _is_certificate_control_obscured(self, element) -> bool:
+        try:
+            return bool(self.browser.driver.execute_script("""
+                const e=arguments[0], r=e.getBoundingClientRect();
+                const top=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);
+                return Boolean(top && top !== e && !e.contains(top));
+            """, element))
+        except Exception:
+            return True
 
     def wait_for_direct_save_result(self, panel, imei: str, timeout: float = 15.0, trace=None) -> dict[str, object]:
         iterations = 0

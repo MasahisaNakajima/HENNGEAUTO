@@ -1677,6 +1677,34 @@ def test_direct_save_target_refetch_clicks_current_save_once_without_candidate_o
     assert cancel.click_calls == 0
 
 
+def test_direct_save_dismisses_visible_suggestion_once_before_refetch_and_save():
+    handler = handler_for(type("Driver", (), {})())
+    save = DomNode("button", text="保存")
+    label = DomNode("label", text="IMEI")
+    panel = DomNode("aside", children={
+        "button,a,[role='button']": [save],
+        "label,h1,h2,h3,h4,h5,h6,p,span": [label],
+        "input": [DomNode("input", attrs={"type": "text", "value": "123456789012345"})],
+    })
+    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+    snapshots = iter([
+        {"client_certificate_direct_save_readiness_candidate_visible": True, "client_certificate_direct_save_readiness_primary_value_exact_match": True, "client_certificate_direct_save_readiness_related_exact_match_count": 0, "client_certificate_direct_save_readiness_selection_id_present": False, "client_certificate_direct_save_readiness_internal_value_resolution_method": "primary_value_only"},
+        {"client_certificate_direct_save_readiness_candidate_visible": False, "client_certificate_direct_save_readiness_primary_value_exact_match": True, "client_certificate_direct_save_readiness_related_exact_match_count": 0, "client_certificate_direct_save_readiness_selection_id_present": False, "client_certificate_direct_save_readiness_internal_value_resolution_method": "primary_value_only"},
+    ])
+    handler.inspect_direct_save_readiness_without_selection = lambda *_args, **_kwargs: next(snapshots)
+    handler._is_certificate_control_obscured = lambda _element: False
+
+    result = handler.refetch_direct_save_target_and_click(panel, "123456789012345")
+
+    assert result["client_certificate_suggestion_blur_click_count"] == 1
+    assert result["client_certificate_suggestion_blur_completed"] is True
+    assert result["client_certificate_direct_save_target_unobscured"] is True
+    assert result["device_binding_save_count"] == 1
+    assert label.click_calls == 1
+    assert save.click_calls == 1
+
+
 def test_direct_save_target_does_not_click_when_save_is_not_unique():
     handler = handler_for(type("Driver", (), {})())
     save_one = DomNode("button", text="保存")
