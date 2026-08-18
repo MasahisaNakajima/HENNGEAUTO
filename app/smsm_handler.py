@@ -2038,6 +2038,18 @@ class SmsmHandler:
         card_elements = self._safe_find_elements_from(card, By.CSS_SELECTOR, "*") if card is not None else []
         if card is not None:
             card_elements = [card, *card_elements]
+        scoped_scan_called = card is not None
+        scoped_scan_completed = False
+        scoped_elements = []
+        outside_element_excluded_count = 0
+        if card is not None:
+            for element in card_elements:
+                if element is card or self._is_ancestor_element(card, element):
+                    scoped_elements.append(element)
+                else:
+                    outside_element_excluded_count += 1
+            scoped_scan_completed = True
+        card_elements = scoped_elements
         card_visible = [item for item in card_elements if self._safe_bool(item, "is_displayed") and self._dom_visibility_verified(item)]
         card_texts = [self._normalize_reference_text(self._safe_element_text_for_diagnostic(item)) for item in card_visible]
         exact_default = [item for item, text in zip(card_visible, card_texts) if text in {"クライアント証明書(デフォルト)", "クライアント証明書（デフォルト）"}]
@@ -2047,6 +2059,7 @@ class SmsmHandler:
         validity = [text for text in card_texts if "有効期間" in text and len(text) > len("有効期間")]
         controls = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button'],[role='link']") if panel is not None else []
         card_controls = self._safe_find_elements_from(card, By.CSS_SELECTOR, "button,a,[role='button'],[role='link']") if card is not None else []
+        card_controls = [item for item in card_controls if item is card or self._is_ancestor_element(card, item)]
         control_texts = [self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() for item in controls if self._safe_bool(item, "is_displayed") and self._safe_bool(item, "is_enabled")]
         card_control_texts = [self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() for item in card_controls if self._safe_bool(item, "is_displayed") and self._safe_bool(item, "is_enabled")]
         panel_edit_count = sum(text in {"編集", "edit"} for text in control_texts)
@@ -2078,6 +2091,15 @@ class SmsmHandler:
             "client_certificate_saved_state_card_leaf_unique": len(leaf_cards) == 1,
             "client_certificate_saved_state_card_selected_from_nested_candidates": len(leaf_cards) == 1 and len(deduplicated_cards) > 1,
             "client_certificate_saved_state_card_nesting_resolution_method": "leaf_most_qualified_dom_section" if len(leaf_cards) == 1 and len(deduplicated_cards) > 1 else "unresolved",
+            "client_certificate_saved_state_card_scoped_scan_called": scoped_scan_called,
+            "client_certificate_saved_state_card_scoped_scan_completed": scoped_scan_completed,
+            "client_certificate_saved_state_card_scoped_element_count": len(scoped_elements),
+            "client_certificate_saved_state_card_outside_element_excluded_count": outside_element_excluded_count,
+            "client_certificate_saved_state_card_scoped_edit_candidate_count": edit_count,
+            "client_certificate_saved_state_card_scoped_delete_candidate_count": delete_count,
+            "client_certificate_saved_state_card_scoped_save_candidate_count": save_count,
+            "client_certificate_saved_state_card_scoped_cancel_candidate_count": cancel_count,
+            "client_certificate_saved_state_card_scoped_unconfigured_detected": any("設定なし" in text for text in card_texts),
             "client_certificate_saved_state_success_notice_candidate_count": len(notices),
             "client_certificate_saved_state_success_notice_unique": len(notices) == 1,
             "client_certificate_saved_state_success_notice_visible": bool(notices),

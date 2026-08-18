@@ -1839,6 +1839,7 @@ def test_saved_reference_state_accepts_complete_reference_without_success_notice
         "button,a,[role='button'],[role='link']": [],
     })
     handler._safe_find_elements_from = lambda element, _by, selector: (card.children.get(selector, []) if element is card else panel.children.get(selector, []))
+    handler._is_ancestor_element = lambda ancestor, descendant: ancestor is card
     handler._dom_visibility_probe = lambda _element: {"visible": True}
 
     result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
@@ -1923,7 +1924,7 @@ def test_saved_reference_state_selects_leaf_most_from_seven_nested_candidates():
     panel = DomNode("aside", children={"*": candidates, "button,a,[role='button'],[role='link']": []})
     handler._safe_find_elements_from = lambda element, _by, selector: leaf.children.get(selector, []) if element is leaf else panel.children.get(selector, [])
     handler._dom_visibility_probe = lambda _element: {"visible": True}
-    handler._is_ancestor_element = lambda ancestor, descendant: candidates.index(ancestor) < candidates.index(descendant)
+    handler._is_ancestor_element = lambda ancestor, descendant: ancestor in candidates and (descendant in candidates and candidates.index(ancestor) < candidates.index(descendant) or descendant not in candidates and ancestor is leaf)
 
     result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
 
