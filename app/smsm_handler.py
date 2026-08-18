@@ -1682,6 +1682,25 @@ class SmsmHandler:
             "client_certificate_suggestion_blur_related_value_maintained": False,
             "client_certificate_suggestion_blur_selection_id_maintained": False,
             "client_certificate_suggestion_blur_internal_value_maintained": False,
+            "client_certificate_suggestion_escape_needed": False,
+            "client_certificate_suggestion_escape_active_element_verified": False,
+            "client_certificate_suggestion_escape_called": False,
+            "client_certificate_suggestion_escape_count": 0,
+            "client_certificate_suggestion_escape_completed": False,
+            "client_certificate_suggestion_escape_retry_count": 0,
+            "client_certificate_suggestion_escape_exception_type": "",
+            "client_certificate_suggestion_escape_wait_called": False,
+            "client_certificate_suggestion_escape_wait_completed": False,
+            "client_certificate_suggestion_escape_wait_iteration_count": 0,
+            "client_certificate_suggestion_escape_wait_timeout": False,
+            "client_certificate_suggestion_visible_before_escape": False,
+            "client_certificate_suggestion_visible_after_escape": False,
+            "client_certificate_suggestion_disappeared_after_escape": False,
+            "client_certificate_direct_save_value_preserved_after_escape": False,
+            "client_certificate_direct_save_related_value_preserved_after_escape": False,
+            "client_certificate_direct_save_selection_id_preserved_after_escape": False,
+            "client_certificate_direct_save_internal_value_preserved_after_escape": False,
+            "client_certificate_direct_save_target_unobscured_after_escape": False,
             "client_certificate_suggestion_blur_resolution_method": "unresolved",
             "client_certificate_suggestion_blur_default_label_refetched": False,
             "client_certificate_suggestion_blur_default_label_candidate_count": 0,
@@ -1715,53 +1734,24 @@ class SmsmHandler:
         before = self.inspect_direct_save_readiness_without_selection(panel, None, imei, trace=trace)
         suggestion_was_visible = before.get("client_certificate_direct_save_readiness_candidate_visible") is True
         if suggestion_was_visible:
-            safe, label_metrics = self._refetch_default_certificate_blur_target(panel)
-            result.update(label_metrics)
-            result["client_certificate_suggestion_blur_candidate_count"] = len(safe)
-            result["client_certificate_suggestion_blur_default_label_refetched"] = True
-            result["client_certificate_suggestion_blur_default_label_candidate_count"] = len(safe)
-            result["client_certificate_suggestion_blur_default_label_unique"] = len(safe) == 1
-            result["client_certificate_suggestion_blur_default_label_exact_match"] = len(safe) == 1
-            result["client_certificate_suggestion_blur_default_label_visible"] = len(safe) == 1 and self._dom_visibility_verified(safe[0])
-            result["client_certificate_suggestion_blur_default_label_noninteractive"] = len(safe) == 1 and self._is_noninteractive_certificate_label(safe[0])
-            if not all((
-                result["client_certificate_suggestion_blur_default_label_unique"],
-                result["client_certificate_suggestion_blur_default_label_exact_match"],
-                result["client_certificate_suggestion_blur_default_label_visible"],
-                result["client_certificate_suggestion_blur_default_label_noninteractive"],
-            )):
-                return result
-            safe[0].click()
-            result["client_certificate_suggestion_blur_click_called"] = True
-            result["client_certificate_suggestion_blur_click_count"] = 1
-            result["client_certificate_suggestion_blur_resolution_method"] = "default_label_normal_click"
-            def popup_gone(_driver):
-                snapshot = self.inspect_direct_save_readiness_without_selection(panel, None, imei, trace=trace)
-                return snapshot if snapshot.get("client_certificate_direct_save_readiness_candidate_visible") is not True else False
-            try:
-                after = WebDriverWait(self.browser.driver, 5, poll_frequency=0.25).until(popup_gone)
-            except TimeoutException:
-                result["client_certificate_suggestion_blur_timeout"] = True
-                return result
-            result["client_certificate_suggestion_blur_primary_value_maintained"] = after.get("client_certificate_direct_save_readiness_primary_value_exact_match") is True
-            result["client_certificate_suggestion_blur_related_value_maintained"] = after.get("client_certificate_direct_save_readiness_related_exact_match_count", 0) >= 1
-            result["client_certificate_suggestion_blur_selection_id_maintained"] = after.get("client_certificate_direct_save_readiness_selection_id_present") is True
-            result["client_certificate_suggestion_blur_internal_value_maintained"] = after.get("client_certificate_direct_save_readiness_internal_value_present") is True
+            result.update(self._dismiss_imei_suggestion_with_escape(panel, imei, before, trace=trace))
             if not all(result[key] for key in (
-                "client_certificate_suggestion_blur_primary_value_maintained",
-                "client_certificate_suggestion_blur_related_value_maintained",
-                "client_certificate_suggestion_blur_selection_id_maintained",
-                "client_certificate_suggestion_blur_internal_value_maintained",
+                "client_certificate_suggestion_escape_completed",
+                "client_certificate_suggestion_disappeared_after_escape",
+                "client_certificate_direct_save_value_preserved_after_escape",
+                "client_certificate_direct_save_related_value_preserved_after_escape",
+                "client_certificate_direct_save_selection_id_preserved_after_escape",
+                "client_certificate_direct_save_internal_value_preserved_after_escape",
             )):
                 return result
-            result["client_certificate_suggestion_blur_completed"] = True
         current_saves = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button']")
         current_saves = [item for item in current_saves if self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)) == "保存"]
         if len(current_saves) != 1:
             return result
         target = current_saves[0]
-        result["client_certificate_direct_save_target_unobscured"] = not suggestion_was_visible or not self._is_certificate_control_obscured(target)
-        if not result["client_certificate_direct_save_target_unobscured"]:
+        result["client_certificate_direct_save_target_unobscured"] = not self._is_certificate_control_obscured(target)
+        result["client_certificate_direct_save_target_unobscured_after_escape"] = result["client_certificate_direct_save_target_unobscured"]
+        if suggestion_was_visible and not result["client_certificate_direct_save_target_unobscured_after_escape"]:
             result["client_certificate_direct_save_failure_reason"] = "save_target_obscured"
             return result
         result["device_binding_save_called"] = True
@@ -1779,6 +1769,69 @@ class SmsmHandler:
             return result
         result["device_binding_save_completed"] = True
         self._trace(trace, "device_binding_save_completed", True)
+        return result
+
+    def _dismiss_imei_suggestion_with_escape(self, panel, imei: str, before: dict[str, object], trace=None) -> dict[str, object]:
+        result = {
+            "client_certificate_suggestion_escape_needed": True,
+            "client_certificate_suggestion_escape_active_element_verified": False,
+            "client_certificate_suggestion_escape_called": False,
+            "client_certificate_suggestion_escape_count": 0,
+            "client_certificate_suggestion_escape_completed": False,
+            "client_certificate_suggestion_escape_retry_count": 0,
+            "client_certificate_suggestion_escape_exception_type": "",
+            "client_certificate_suggestion_escape_wait_called": False,
+            "client_certificate_suggestion_escape_wait_completed": False,
+            "client_certificate_suggestion_escape_wait_iteration_count": 0,
+            "client_certificate_suggestion_escape_wait_timeout": False,
+            "client_certificate_suggestion_visible_before_escape": True,
+            "client_certificate_suggestion_visible_after_escape": True,
+            "client_certificate_suggestion_disappeared_after_escape": False,
+            "client_certificate_direct_save_value_preserved_after_escape": False,
+            "client_certificate_direct_save_related_value_preserved_after_escape": False,
+            "client_certificate_direct_save_selection_id_preserved_after_escape": False,
+            "client_certificate_direct_save_internal_value_preserved_after_escape": False,
+        }
+        primary = self.inspect_primary_client_certificate_input(panel)
+        inputs = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "input,textarea,[role='combobox'],[contenteditable='true']")
+        eligible = [item for item in inputs if self._safe_bool(item, "is_displayed") and self._safe_bool(item, "is_enabled") and str(self._safe_attribute(item, "type") or "").casefold() != "hidden"]
+        if len(eligible) != 1 or primary.get("client_certificate_primary_input_resolved") is not True:
+            return result
+        input_element = eligible[0]
+        if self._input_value(input_element) != imei:
+            return result
+        try:
+            active = bool(self.browser.driver.execute_script("return document.activeElement === arguments[0] || arguments[0].contains(document.activeElement);", input_element))
+        except Exception:
+            active = False
+        result["client_certificate_suggestion_escape_active_element_verified"] = active
+        if not active:
+            return result
+        result["client_certificate_suggestion_escape_called"] = True
+        result["client_certificate_suggestion_escape_count"] = 1
+        try:
+            input_element.send_keys(Keys.ESCAPE)
+            result["client_certificate_suggestion_escape_completed"] = True
+        except Exception as exc:
+            result["client_certificate_suggestion_escape_exception_type"] = type(exc).__name__
+            return result
+        def popup_gone(_driver):
+            snapshot = self.inspect_direct_save_readiness_without_selection(panel, input_element, imei, trace=trace)
+            result["client_certificate_suggestion_visible_after_escape"] = snapshot.get("client_certificate_direct_save_readiness_candidate_visible") is True
+            result["client_certificate_suggestion_escape_wait_iteration_count"] += 1
+            return snapshot if not result["client_certificate_suggestion_visible_after_escape"] else False
+        result["client_certificate_suggestion_escape_wait_called"] = True
+        try:
+            after = WebDriverWait(self.browser.driver, 5, poll_frequency=0.25).until(popup_gone)
+            result["client_certificate_suggestion_escape_wait_completed"] = True
+        except TimeoutException:
+            result["client_certificate_suggestion_escape_wait_timeout"] = True
+            return result
+        result["client_certificate_suggestion_disappeared_after_escape"] = True
+        result["client_certificate_direct_save_value_preserved_after_escape"] = after.get("client_certificate_direct_save_readiness_primary_value_exact_match") is True
+        result["client_certificate_direct_save_related_value_preserved_after_escape"] = after.get("client_certificate_direct_save_readiness_related_exact_match_count", 0) >= 1
+        result["client_certificate_direct_save_selection_id_preserved_after_escape"] = after.get("client_certificate_direct_save_readiness_selection_id_present") is True
+        result["client_certificate_direct_save_internal_value_preserved_after_escape"] = after.get("client_certificate_direct_save_readiness_internal_value_present") is True and after.get("client_certificate_direct_save_readiness_internal_value_resolution_method") != "unresolved"
         return result
 
     def _refetch_default_certificate_blur_target(self, panel) -> tuple[list[object], dict[str, object]]:

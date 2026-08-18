@@ -1680,19 +1680,20 @@ def test_direct_save_target_refetch_clicks_current_save_once_without_candidate_o
 def test_direct_save_dismisses_visible_suggestion_once_before_refetch_and_save():
     handler = handler_for(type("Driver", (), {})())
     save = DomNode("button", text="保存")
-    label = DomNode("label", text="クライアント証明書(デフォルト)")
     primary = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
     related = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
     selection_id = DomNode("input", attrs={"type": "hidden", "value": "selection-id"})
     panel = DomNode("aside", children={
         "button,a,[role='button']": [save],
-        "*": [label],
         "input": [primary, related, selection_id],
     })
-    handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, panel.children.get("*", []))
+    handler._safe_find_elements_from = lambda _element, _by, selector: [primary] if selector == "input,textarea,[role='combobox'],[contenteditable='true']" else panel.children.get(selector, [])
     handler._dom_visibility_probe = lambda _element: {"visible": True}
+    handler.browser.driver.execute_script = lambda *_args: True
+    escape_calls = []
+    primary.send_keys = lambda value: escape_calls.append(value)
     snapshots = iter([
-        {"client_certificate_direct_save_readiness_candidate_visible": True, "client_certificate_direct_save_readiness_primary_value_exact_match": True, "client_certificate_direct_save_readiness_related_exact_match_count": 0, "client_certificate_direct_save_readiness_selection_id_present": False, "client_certificate_direct_save_readiness_internal_value_resolution_method": "primary_value_only"},
+        {"client_certificate_direct_save_readiness_candidate_visible": True, "client_certificate_direct_save_readiness_primary_value_exact_match": True, "client_certificate_direct_save_readiness_related_exact_match_count": 1, "client_certificate_direct_save_readiness_selection_id_present": True, "client_certificate_direct_save_readiness_internal_value_present": True, "client_certificate_direct_save_readiness_internal_value_resolution_method": "primary_and_related_value_present"},
         {"client_certificate_direct_save_readiness_candidate_visible": False, "client_certificate_direct_save_readiness_primary_value_exact_match": True, "client_certificate_direct_save_readiness_related_exact_match_count": 1, "client_certificate_direct_save_readiness_selection_id_present": True, "client_certificate_direct_save_readiness_internal_value_present": True, "client_certificate_direct_save_readiness_internal_value_resolution_method": "primary_and_related_value_present"},
     ])
     handler.inspect_direct_save_readiness_without_selection = lambda *_args, **_kwargs: next(snapshots)
@@ -1700,28 +1701,31 @@ def test_direct_save_dismisses_visible_suggestion_once_before_refetch_and_save()
 
     result = handler.refetch_direct_save_target_and_click(panel, "123456789012345")
 
-    assert result["client_certificate_suggestion_blur_click_count"] == 1
-    assert result["client_certificate_suggestion_blur_completed"] is True
-    assert result["client_certificate_direct_save_target_unobscured"] is True
+    assert result["client_certificate_suggestion_escape_count"] == 1
+    assert result["client_certificate_suggestion_escape_completed"] is True
+    assert result["client_certificate_suggestion_disappeared_after_escape"] is True
+    assert result["client_certificate_direct_save_target_unobscured_after_escape"] is True
     assert result["device_binding_save_count"] == 1
-    assert label.click_calls == 1
+    assert len(escape_calls) == 1
     assert save.click_calls == 1
 
 
-@pytest.mark.parametrize("labels", [[], [DomNode("label", text="クライアント証明書(デフォルト)"), DomNode("label", text="クライアント証明書(デフォルト)")]])
-def test_direct_save_does_not_save_when_default_label_is_not_unique(labels):
+def test_direct_save_does_not_save_when_active_element_is_not_primary_input():
     handler = handler_for(type("Driver", (), {})())
     save = DomNode("button", text="保存")
-    panel = DomNode("aside", children={"button,a,[role='button']": [save], "*": labels})
+    primary = DomNode("input", attrs={"type": "text", "value": "123456789012345"})
+    panel = DomNode("aside", children={"button,a,[role='button']": [save], "input": [primary]})
     handler._safe_find_elements_from = lambda _element, _by, selector: panel.children.get(selector, [])
     handler._dom_visibility_probe = lambda _element: {"visible": True}
+    handler.browser.driver.execute_script = lambda *_args: False
     handler.inspect_direct_save_readiness_without_selection = lambda *_args, **_kwargs: {
         "client_certificate_direct_save_readiness_candidate_visible": True,
     }
 
     result = handler.refetch_direct_save_target_and_click(panel, "123456789012345")
 
-    assert result["client_certificate_suggestion_blur_default_label_candidate_count"] == len(labels)
+    assert result["client_certificate_suggestion_escape_active_element_verified"] is False
+    assert result["client_certificate_suggestion_escape_called"] is False
     assert result["device_binding_save_called"] is False
     assert save.click_calls == 0
 
