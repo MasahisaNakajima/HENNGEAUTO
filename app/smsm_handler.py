@@ -1991,26 +1991,70 @@ class SmsmHandler:
         texts = [self._normalize_reference_text(self._safe_element_text_for_diagnostic(item)) for item in elements]
         visible = [item for item in elements if self._safe_bool(item, "is_displayed") and self._dom_visibility_verified(item)]
         visible_texts = [self._normalize_reference_text(self._safe_element_text_for_diagnostic(item)) for item in visible]
-        exact_default = [item for item, text in zip(visible, visible_texts) if text in {"クライアント証明書(デフォルト)", "クライアント証明書（デフォルト）"}]
-        filename = [item for item, text in zip(visible, visible_texts) if text == imei]
-        subject = [text for text in visible_texts if "発行先" in text and len(text) > len("発行先")]
-        issuer = [text for text in visible_texts if "発行者" in text and len(text) > len("発行者")]
-        validity = [text for text in visible_texts if "有効期間" in text and len(text) > len("有効期間")]
+        default_matches = [item for item, text in zip(visible, visible_texts) if text in {"クライアント証明書(デフォルト)", "クライアント証明書（デフォルト）"}]
+        filename_matches = [item for item, text in zip(visible, visible_texts) if text == imei]
+        card_candidates = []
+        if not default_matches:
+            default_matches = [item for item, text in zip(visible, visible_texts) if "クライアント証明書（デフォルト）" in text or "クライアント証明書(デフォルト)" in text]
+        for default_label in default_matches:
+            ancestors = [default_label]
+            current = default_label
+            for _ in range(8):
+                try:
+                    current = current.find_element(By.XPATH, "./..")
+                except Exception:
+                    break
+                ancestors.append(current)
+            for candidate in ancestors:
+                candidate_text = self._normalize_reference_text(self._safe_element_text_for_diagnostic(candidate))
+                if imei in candidate_text and "発行先" in candidate_text and "発行者" in candidate_text and "有効期間" in candidate_text:
+                    card_candidates.append(candidate)
+        if not card_candidates:
+            for candidate in visible:
+                candidate_text = self._normalize_reference_text(self._safe_element_text_for_diagnostic(candidate))
+                if ("クライアント証明書（デフォルト）" in candidate_text or "クライアント証明書(デフォルト)" in candidate_text) and imei in candidate_text and "発行先" in candidate_text and "発行者" in candidate_text and "有効期間" in candidate_text:
+                    card_candidates.append(candidate)
+        deduplicated_cards = []
+        for candidate in card_candidates:
+            if not any(candidate is existing or candidate == existing for existing in deduplicated_cards):
+                deduplicated_cards.append(candidate)
+        card = deduplicated_cards[0] if len(deduplicated_cards) == 1 else None
+        card_elements = self._safe_find_elements_from(card, By.CSS_SELECTOR, "*") if card is not None else []
+        if card is not None:
+            card_elements = [card, *card_elements]
+        card_visible = [item for item in card_elements if self._safe_bool(item, "is_displayed") and self._dom_visibility_verified(item)]
+        card_texts = [self._normalize_reference_text(self._safe_element_text_for_diagnostic(item)) for item in card_visible]
+        exact_default = [item for item, text in zip(card_visible, card_texts) if text in {"クライアント証明書(デフォルト)", "クライアント証明書（デフォルト）"}]
+        filename = [item for item, text in zip(card_visible, card_texts) if text == imei]
+        subject = [text for text in card_texts if "発行先" in text and len(text) > len("発行先")]
+        issuer = [text for text in card_texts if "発行者" in text and len(text) > len("発行者")]
+        validity = [text for text in card_texts if "有効期間" in text and len(text) > len("有効期間")]
         controls = self._safe_find_elements_from(panel, By.CSS_SELECTOR, "button,a,[role='button'],[role='link']") if panel is not None else []
+        card_controls = self._safe_find_elements_from(card, By.CSS_SELECTOR, "button,a,[role='button'],[role='link']") if card is not None else []
         control_texts = [self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() for item in controls if self._safe_bool(item, "is_displayed") and self._safe_bool(item, "is_enabled")]
-        edit_count = sum(text in {"編集", "edit"} for text in control_texts)
-        delete_count = sum(text in {"削除", "delete", "remove"} for text in control_texts)
-        save_count = sum(text in {"保存", "save"} for text in control_texts)
-        cancel_count = sum(text in {"取消", "cancel"} for text in control_texts)
+        card_control_texts = [self._normalize_navigation_name(self._safe_element_text_for_diagnostic(item)).casefold() for item in card_controls if self._safe_bool(item, "is_displayed") and self._safe_bool(item, "is_enabled")]
+        panel_edit_count = sum(text in {"編集", "edit"} for text in control_texts)
+        edit_count = sum(text in {"編集", "edit"} for text in card_control_texts)
+        delete_count = sum(text in {"削除", "delete", "remove"} for text in card_control_texts)
+        save_count = sum(text in {"保存", "save"} for text in card_control_texts)
+        cancel_count = sum(text in {"取消", "cancel"} for text in card_control_texts)
         notices = [text for text in visible_texts if text == "クライアント証明書の設定を変更しました。" or "クライアント証明書の設定を変更しました。" in text]
         filename_present = bool(filename)
         reference_detected = bool(
             len(exact_default) == 1 and filename_present and filename[0] is not None
             and subject and issuer and validity and edit_count == 1 and delete_count == 1
             and save_count == 0 and cancel_count == 0
-            and not any("設定なし" in text for text in visible_texts)
+            and not any("設定なし" in text for text in card_texts)
         )
         return {
+            "client_certificate_saved_state_card_resolution_called": True,
+            "client_certificate_saved_state_card_raw_candidate_count": len(card_candidates),
+            "client_certificate_saved_state_card_qualified_candidate_count": len(card_candidates),
+            "client_certificate_saved_state_card_deduplicated_candidate_count": len(deduplicated_cards),
+            "client_certificate_saved_state_card_unique": len(deduplicated_cards) == 1,
+            "client_certificate_saved_state_card_contains_default_label": bool(exact_default),
+            "client_certificate_saved_state_card_contains_exact_filename": len(filename) == 1,
+            "client_certificate_saved_state_card_resolution_method": "default_label_and_exact_filename_section" if len(deduplicated_cards) == 1 else "unresolved",
             "client_certificate_saved_state_success_notice_candidate_count": len(notices),
             "client_certificate_saved_state_success_notice_unique": len(notices) == 1,
             "client_certificate_saved_state_success_notice_visible": bool(notices),
@@ -2021,6 +2065,8 @@ class SmsmHandler:
             "client_certificate_saved_state_filename_format_valid": len(filename) == 1 and bool(re.fullmatch(r"\d{15}", imei)),
             "client_certificate_saved_state_filename_length_match": len(filename) == 1 and len(imei) == 15,
             "client_certificate_saved_state_default_label_present": len(exact_default) == 1,
+            "client_certificate_saved_state_panel_edit_candidate_count": panel_edit_count,
+            "client_certificate_saved_state_panel_unconfigured_detected": any("設定なし" in text for text in visible_texts),
             "client_certificate_saved_state_subject_present": bool(subject),
             "client_certificate_saved_state_issuer_present": bool(issuer),
             "client_certificate_saved_state_validity_present": bool(validity),
@@ -2033,7 +2079,7 @@ class SmsmHandler:
             "client_certificate_saved_state_cancel_button_count": cancel_count,
             "client_certificate_saved_state_save_candidate_count": save_count,
             "client_certificate_saved_state_cancel_candidate_count": cancel_count,
-            "client_certificate_saved_state_unconfigured_detected": any("設定なし" in text for text in visible_texts),
+            "client_certificate_saved_state_unconfigured_detected": any("設定なし" in text for text in card_texts),
             "client_certificate_saved_state_reference_detected": reference_detected,
             "client_certificate_saved_state_verified": reference_detected,
             "client_certificate_saved_state_resolution_method": "configured_reference_with_exact_filename" if reference_detected else "unresolved",

@@ -1824,7 +1824,7 @@ def test_direct_save_wait_requires_two_stable_exact_value_observations():
 
 def test_saved_reference_state_accepts_complete_reference_without_success_notice():
     handler = handler_for(type("Driver", (), {})())
-    panel = DomNode("aside", children={
+    card = DomNode("section", text="クライアント証明書（デフォルト） 123456789012345 発行先: subject 発行者: issuer 有効期間: validity", children={
         "*": [
             DomNode("span", text="クライアント証明書（デフォルト）"),
             DomNode("span", text="123456789012345"),
@@ -1834,7 +1834,11 @@ def test_saved_reference_state_accepts_complete_reference_without_success_notice
         ],
         "button,a,[role='button'],[role='link']": [DomNode("button", text="編集"), DomNode("button", text="削除")],
     })
-    handler._safe_find_elements_from = lambda element, _by, selector: panel.children.get(selector, [])
+    panel = DomNode("aside", children={
+        "*": [card, *card.children["*"], *card.children["button,a,[role='button'],[role='link']"]],
+        "button,a,[role='button'],[role='link']": [],
+    })
+    handler._safe_find_elements_from = lambda element, _by, selector: (card.children.get(selector, []) if element is card else panel.children.get(selector, []))
     handler._dom_visibility_probe = lambda _element: {"visible": True}
 
     result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
@@ -1876,6 +1880,36 @@ def test_saved_reference_state_rejects_filename_mismatch():
 
     assert result["client_certificate_saved_state_filename_exact_match"] is False
     assert result["client_certificate_saved_state_reference_detected"] is False
+
+
+def test_saved_reference_state_scopes_controls_and_unconfigured_to_default_card():
+    handler = handler_for(type("Driver", (), {})())
+    saved_card = DomNode("section", text="クライアント証明書（デフォルト） 123456789012345 発行先: subject 発行者: issuer 有効期間: validity", children={
+        "*": [DomNode("span", text="クライアント証明書（デフォルト）"), DomNode("span", text="123456789012345"), DomNode("span", text="発行先: subject"), DomNode("span", text="発行者: issuer"), DomNode("span", text="有効期間: validity")],
+        "button,a,[role='button'],[role='link']": [DomNode("button", text="編集"), DomNode("button", text="削除")],
+    })
+    unconfigured_card = DomNode("section", text="クライアント証明書 （設定なし）", children={
+        "*": [DomNode("span", text="クライアント証明書"), DomNode("span", text="（設定なし）")],
+        "button,a,[role='button'],[role='link']": [DomNode("button", text="編集")],
+    })
+    panel = DomNode("aside", children={"*": [saved_card, unconfigured_card], "button,a,[role='button'],[role='link']": []})
+    def find(element, _by, selector):
+        if element is saved_card:
+            return saved_card.children.get(selector, [])
+        if element is unconfigured_card:
+            return unconfigured_card.children.get(selector, [])
+        return [saved_card, *saved_card.children.get("*", []), *saved_card.children.get("button,a,[role='button'],[role='link']"), unconfigured_card, *unconfigured_card.children.get("*", []), *unconfigured_card.children.get("button,a,[role='button'],[role='link']")] if selector == "*" else panel.children.get(selector, [])
+    handler._safe_find_elements_from = find
+    handler._dom_visibility_probe = lambda _element: {"visible": True}
+
+    result = handler.inspect_saved_certificate_reference_state(panel, "123456789012345")
+
+    assert result["client_certificate_saved_state_panel_edit_candidate_count"] == 0
+    assert result["client_certificate_saved_state_edit_candidate_count"] == 1
+    assert result["client_certificate_saved_state_delete_candidate_count"] == 1
+    assert result["client_certificate_saved_state_panel_unconfigured_detected"] is True
+    assert result["client_certificate_saved_state_unconfigured_detected"] is False
+    assert result["client_certificate_saved_state_verified"] is True
 
 
 def test_imei_send_keys_once_and_exact_suggestion_is_observed_without_selection(monkeypatch):
