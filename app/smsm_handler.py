@@ -2086,7 +2086,6 @@ class SmsmHandler:
             section.get("start_unique") is True and section.get("end_resolved") is True
             and section.get("dom_order_verified") is True and section_filename
             and section_subject and section_issuer and section_validity
-            and section_edit_count == 1 and section_delete_count == 1
             and section_save_count == 0 and section_cancel_count == 0 and not section_unconfigured
         )
         return {
