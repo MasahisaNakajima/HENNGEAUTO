@@ -1770,6 +1770,29 @@ def test_saved_state_only_rejects_conflicts_before_browser(monkeypatch, conflict
     assert started == []
 
 
+def test_saved_state_only_failure_emits_diagnostics_once(monkeypatch, capsys):
+    monkeypatch.setattr(mod, "load_config", lambda: {"excel": {"path": "unused"}})
+    monkeypatch.setattr(mod.ExcelReader, "read_targets", lambda self, include_row_number=True: [])
+
+    assert mod.main(["--inspect-smsm-client-certificate-saved-state-only"]) == 1
+    output = capsys.readouterr().out
+    assert "client_certificate_saved_state_only_runner_called=True" in output
+    assert "client_certificate_saved_state_only_result_available=True" in output
+    assert "client_certificate_saved_state_only_output_called=True" in output
+    assert "client_certificate_saved_state_only_output_completed=True" in output
+    assert "client_certificate_saved_state_only_success=False" in output
+    assert output.count("client_certificate_saved_state_only_output_completed=") == 1
+
+
+def test_saved_state_only_exception_emits_diagnostics(monkeypatch, capsys):
+    monkeypatch.setattr(mod, "load_config", lambda: (_ for _ in ()).throw(RuntimeError("secret details")))
+
+    assert mod.main(["--inspect-smsm-client-certificate-saved-state-only"]) == 1
+    output = capsys.readouterr().out
+    assert "client_certificate_saved_state_only_output_completed=True" in output
+    assert "secret details" not in output
+
+
 def test_client_certificate_edit_form_only_option_selects_dedicated_route(monkeypatch):
     calls = []
     monkeypatch.setattr(mod, "_run_smsm_client_certificate_edit_form_only", lambda args: calls.append(args) or 0)

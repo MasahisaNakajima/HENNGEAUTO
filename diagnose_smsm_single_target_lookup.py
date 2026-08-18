@@ -2383,31 +2383,88 @@ def main(argv: list[str] | None = None) -> int:
 def _run_smsm_client_certificate_saved_state_only(args: list[str]) -> int:
     logger = AppLogger(_base_dir(), unique_log=True)
     browser = None
+    current_stage = "client_certificate_saved_state_only_cli_validation"
+    last_completed_stage = ""
     observations = {
+        "client_certificate_saved_state_only_runner_called": True,
+        "client_certificate_saved_state_only_result_available": False,
+        "client_certificate_saved_state_only_output_called": False,
+        "client_certificate_saved_state_only_output_completed": False,
+        "client_certificate_saved_state_only_success": False,
         "client_certificate_saved_state_only": True,
+        "browser_start_called": False,
+        "failed_stage": "",
+        "last_completed_stage": "",
+        "exception_type": "",
+        "exception_message_class": "",
         "client_certificate_edit_click_called": False,
         "client_certificate_edit_click_count": 0,
+        "device_imei_send_keys_called": False,
+        "client_certificate_suggestion_click_called": False,
+        "client_certificate_option_selection_called": False,
+        "device_binding_save_called": False,
+        "client_certificate_cancel_click_called": False,
+        "client_certificate_delete_click_called": False,
         "client_certificate_saved_state_excel_write_called": False,
         "client_certificate_saved_state_delete_click_called": False,
         "client_certificate_saved_state_save_click_called": False,
         "client_certificate_saved_state_cancel_click_called": False,
+        "excel_write_called": False,
+        "certificate_upload_called": False,
     }
-    if args != ["--inspect-smsm-client-certificate-saved-state-only"]:
-        observations.update({"failed_stage": "cli_flag_validation", "exception_type": "ArgumentError"})
+    def advance(stage: str) -> None:
+        nonlocal current_stage
+        current_stage = stage
+
+    def complete(stage: str) -> None:
+        nonlocal last_completed_stage
+        last_completed_stage = stage
+
+    def finalize(result: dict[str, object], success: bool, exc: BaseException | None = None, code: int | None = None) -> int:
+        if exc is not None:
+            result = dict(result)
+            result.update(_name_error_diagnostics(exc, _base_dir()))
+            result.update(_key_error_diagnostics(exc))
+        observations.update(_safe_observation_scalars(result))
+        observations["client_certificate_saved_state_only_result_available"] = True
+        observations["client_certificate_saved_state_only_success"] = success
+        observations["failed_stage"] = "" if success else current_stage
+        observations["last_completed_stage"] = "client_certificate_saved_state_only_completed" if success else last_completed_stage
+        observations["exception_type"] = type(exc).__name__ if exc is not None else ""
+        observations["exception_message_class"] = "diagnostic_failure" if exc is not None else ""
+        observations["client_certificate_saved_state_only_output_called"] = True
+        observations["client_certificate_saved_state_only_output_completed"] = True
         for key, value in observations.items():
-            _emit(logger, key, value)
-        return 2
+            safe = _safe_public_diagnostic_value(value)
+            if safe is not None:
+                _emit(logger, key, safe)
+                print(f"{key}={safe}")
+        return code if code is not None else (0 if success else 1)
+
+    if args != ["--inspect-smsm-client-certificate-saved-state-only"]:
+        observations["exception_message_class"] = "cli_conflict"
+        return finalize({}, False, code=2)
     try:
+        advance("client_certificate_saved_state_only_load_target")
         config = load_config()
         targets = ExcelReader(str((config.get("excel", {}) or {}).get("path", ""))).read_targets(include_row_number=True)
         if len(targets) != 1:
             raise RuntimeError("対象Excel行が1件ではありません")
         context = WorkflowContext(); context.config = config; context.set_target(targets[0])
+        complete(current_stage)
+        advance("client_certificate_saved_state_only_start_browser")
         browser = Browser(_base_dir(), config); browser.start()
+        observations["browser_start_called"] = True
+        complete(current_stage)
+        advance("client_certificate_saved_state_only_login")
         service = ProductionWorkflowService(config=config, logger=logger, browser=browser, smsm_config=resolve_smsm_config(config))
         service.smsm_login(context)
+        complete(current_stage)
+        advance("client_certificate_saved_state_only_search_device")
         service.smsm_open_device_list(context)
         service.smsm_search_device_by_serial(context, read_only=True)
+        complete(current_stage)
+        advance("client_certificate_saved_state_only_inspect_reference")
         navigation = service.smsm.inspect_client_certificate_navigation_only(context.target_serial)
         panel = navigation.get("client_certificate_panel")
         state = service.smsm.inspect_saved_certificate_reference_state(panel, normalize_imei(context.target_imei))
@@ -2421,23 +2478,17 @@ def _run_smsm_client_certificate_saved_state_only(args: list[str]) -> int:
             "client_certificate_saved_state_save_click_called": False,
             "client_certificate_saved_state_cancel_click_called": False,
         })
+        complete(current_stage)
         success = all((
             navigation.get("device_result_identity_verified") is True,
             navigation.get("client_certificate_panel_unique") is True,
             state.get("client_certificate_saved_state_verified") is True,
         ))
-        observations["failed_stage"] = "" if success else "client_certificate_saved_state_verification"
-        observations["exception_type"] = ""
-        for key, value in observations.items():
-            safe = _safe_public_diagnostic_value(value)
-            if safe is not None:
-                _emit(logger, key, safe)
-        return 0 if success else 1
+        if not success:
+            current_stage = "client_certificate_saved_state_only_verify_reference"
+        return finalize({}, success)
     except Exception as exc:
-        observations.update({"failed_stage": "client_certificate_saved_state_verification", "exception_type": type(exc).__name__})
-        for key, value in observations.items():
-            _emit(logger, key, value)
-        return 1
+        return finalize(locals().get("observations", {}), False, exc)
     finally:
         if browser is not None:
             try:
